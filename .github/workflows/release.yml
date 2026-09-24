@@ -4,6 +4,8 @@
 #   git tag v1.0.0 && git push origin v1.0.0
 # or from the Actions tab (Run workflow) with a version number.
 #
+# Release notes come from this version's section of CHANGELOG.md ("## 1.2.0").
+#
 # Needs these repository secrets (Settings → Secrets and variables → Actions):
 #   ANDROID_KEYSTORE_BASE64   the release keystore file, base64-encoded
 #   ANDROID_KEYSTORE_PASSWORD its store password
@@ -100,11 +102,32 @@ jobs:
           sha256sum "$APK" > "$APK.sha256"
           rm -f android/app/release.keystore
 
+      # Release notes: this version's "## x.y.z" section of CHANGELOG.md, if it
+      # has one; otherwise GitHub's automatic notes.
+      - name: Release notes from CHANGELOG.md
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.name }}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              /^## / { if (found) exit; h=$2; sub(/^v/, "", h); if (h == v) { found=1; next } }
+              found { print }
+            ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
+          fi
+          if [ -s release-notes.md ]; then
+            echo "file=release-notes.md" >> "$GITHUB_OUTPUT"
+            echo "auto=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No CHANGELOG.md section for $VERSION: using GitHub's automatic notes."
+            echo "auto=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
           name: stash ${{ steps.version.outputs.name }}
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.file }}
+          generate_release_notes: ${{ steps.notes.outputs.auto == 'true' }}
           files: |
             stash-${{ steps.version.outputs.name }}.apk
             stash-${{ steps.version.outputs.name }}.apk.sha256

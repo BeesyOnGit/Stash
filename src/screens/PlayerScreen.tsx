@@ -472,8 +472,18 @@ function Waveform({
   local: boolean;
 }) {
   const { position, duration } = useProgress();
+  const { isPlaying, isBuffering } = usePlayerState();
+  const { playbackSpeed } = useSettings();
   const width = useRef(1);
+  const [rowWidth, setRowWidth] = useState(0);
   const [drag, setDrag] = useState<number | null>(null);
+  const smooth = useSmoothProgress(
+    position,
+    duration,
+    isPlaying && !isBuffering,
+    playbackSpeed,
+    drag,
+  );
   // The song's real loudness once it's on the phone; a placeholder shape until then.
   const heights = useMemo(
     () =>
@@ -499,7 +509,10 @@ function Waveform({
     <View>
       <View
         style={styles.wave}
-        onLayout={e => (width.current = e.nativeEvent.layout.width || 1)}
+        onLayout={e => {
+          width.current = e.nativeEvent.layout.width || 1;
+          setRowWidth(e.nativeEvent.layout.width);
+        }}
         onStartShouldSetResponder={() => duration > 0}
         onMoveShouldSetResponder={() => duration > 0}
         onResponderTerminationRequest={() => false}
@@ -512,23 +525,46 @@ function Waveform({
         }}
         onResponderTerminate={() => setDrag(null)}
       >
-        {heights.map((h, i) => {
-          const f = (i + 0.5) / BARS;
-          return (
-            <View
-              key={i}
-              pointerEvents="none"
-              style={[
-                styles.waveBar,
-                {
-                  height: `${h}%`,
-                  backgroundColor:
-                    f <= played ? cPlayed : f <= buffered ? cBuf : cEmpty,
-                },
-              ]}
-            />
-          );
-        })}
+        {heights.map((h, i) => (
+          <View
+            key={i}
+            pointerEvents="none"
+            style={[
+              styles.waveBar,
+              {
+                height: `${h}%`,
+                backgroundColor: (i + 0.5) / BARS <= buffered ? cBuf : cEmpty,
+              },
+            ]}
+          />
+        ))}
+        {/* The played part: the same bars in full colour, clipped to exactly the
+            position, so the fill moves through each bar instead of bar by bar. */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.wavePlayed,
+            {
+              width: smooth.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, rowWidth],
+                extrapolate: 'clamp',
+              }),
+            },
+          ]}
+        >
+          <View style={[styles.wave, { width: rowWidth }]}>
+            {heights.map((h, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.waveBar,
+                  { height: `${h}%`, backgroundColor: cPlayed },
+                ]}
+              />
+            ))}
+          </View>
+        </Animated.View>
       </View>
       <View style={styles.times}>
         <Text style={[mono(500, 12), styles.dim, { color: ink }]}>
@@ -543,6 +579,59 @@ function Waveform({
       </View>
     </View>
   );
+}
+
+/**
+ * The playback position (0..1) as an animated value that glides between the
+ * player's progress events (a few per second) instead of jumping: each event
+ * animates to where the song will be at the next one. Seeks, pauses and
+ * dragging move it at once.
+ */
+function useSmoothProgress(
+  position: number,
+  duration: number,
+  playing: boolean,
+  speed: number,
+  drag: number | null,
+) {
+  const value = useRef(new Animated.Value(0)).current;
+  const last = useRef({ pos: 0, at: 0, every: 500 });
+
+  useEffect(() => {
+    if (drag !== null) {
+      value.stopAnimation();
+      value.setValue(drag);
+      return;
+    }
+    if (!(duration > 0)) {
+      value.setValue(0);
+      return;
+    }
+    const now = Date.now();
+    const l = last.current;
+    const gap = now - l.at;
+    // How often progress events arrive, smoothed.
+    if (gap > 50 && gap < 3000) l.every = l.every * 0.7 + gap * 0.3;
+    const expected = l.pos + (gap / 1000) * speed;
+    const jumped = Math.abs(position - expected) > 1.5;
+    l.pos = position;
+    l.at = now;
+
+    const here = position / duration;
+    if (!playing || jumped) {
+      value.stopAnimation();
+      value.setValue(here);
+      return;
+    }
+    Animated.timing(value, {
+      toValue: Math.min(1, (position + (l.every / 1000) * speed) / duration),
+      duration: l.every,
+      easing: Easing.linear,
+      useNativeDriver: false, // animates a width
+    }).start();
+  }, [position, duration, playing, speed, drag, value]);
+
+  return value;
 }
 
 function RoundBtn({
@@ -716,6 +805,13 @@ const styles = StyleSheet.create({
   bottom: { marginTop: 'auto' },
   wave: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 2 },
   waveBar: { flex: 1, borderRadius: 2 },
+  wavePlayed: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
   times: {
     flexDirection: 'row',
     justifyContent: 'space-between',
