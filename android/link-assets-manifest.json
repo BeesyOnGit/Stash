@@ -1,0 +1,41 @@
+{
+  "migIndex": 1,
+  "data": [
+    {
+      "path": "assets/fonts/Geist-Bold.ttf",
+      "sha1": "626f875d7e53e5d9236ef7818d8744fb05246de6"
+    },
+    {
+      "path": "assets/fonts/Geist-Medium.ttf",
+      "sha1": "178b80cbb8ae2f956e4454f0a5ea0f1404f52a36"
+    },
+    {
+      "path": "assets/fonts/Geist-Regular.ttf",
+      "sha1": "61c4a12284270a5b3a90ab941e386688cbcff03e"
+    },
+    {
+      "path": "assets/fonts/Geist-SemiBold.ttf",
+      "sha1": "afea353f15632eea61876ca194e2be555d72bfb0"
+    },
+    {
+      "path": "assets/fonts/GeistMono-Bold.ttf",
+      "sha1": "3de7704664398185c6af59656cc44848257fb848"
+    },
+    {
+      "path": "assets/fonts/GeistMono-Medium.ttf",
+      "sha1": "5d96f7959bfb2ff1f200a59e6f604da140875074"
+    },
+    {
+      "path": "assets/fonts/GeistMono-Regular.ttf",
+      "sha1": "8964538440675daaeed849d2964e57b35457075f"
+    },
+    {
+      "path": "assets/fonts/GeistMono-SemiBold.ttf",
+      "sha1": "fa5cdd88bd4e2b9a2132d7b9e4b0d0f58dffeda4"
+    },
+    {
+      "path": "assets/fonts/OFL-Geist.txt",
+      "sha1": "e426f28a99fe4b09ed4ce4cbc6f8bb0edc73ffb1"
+    }
+  ]
+}

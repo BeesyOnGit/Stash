@@ -1,0 +1,81 @@
+import { useSyncExternalStore } from 'react';
+import { getAllTracks, getPlaylists, subscribeLibrary } from '../db/database';
+import {
+  getDownloadProgress,
+  getDownloadsVersion,
+  subscribeDownloads,
+} from '../services/downloader';
+import type { Playlist, Track } from '../types';
+import { PlayerService } from './PlayerService';
+
+export const usePlayerState = () =>
+  useSyncExternalStore(PlayerService.subscribe, PlayerService.getState);
+
+export const useProgress = () =>
+  useSyncExternalStore(
+    PlayerService.subscribeProgress,
+    PlayerService.getProgress,
+  );
+
+export const useCurrentTrack = () => {
+  const { queue, index } = usePlayerState();
+  return queue[index] ?? null;
+};
+
+/** 0..1 while the track is being downloaded, otherwise undefined. */
+export const useDownloadProgress = (id: string | undefined) =>
+  useSyncExternalStore(subscribeDownloads, () =>
+    id ? getDownloadProgress(id) : undefined,
+  );
+
+/** Re-renders on any download progress change. */
+export const useDownloads = () =>
+  useSyncExternalStore(subscribeDownloads, getDownloadsVersion);
+
+// ---- library: one shared, cached copy for every screen ----
+
+interface LibrarySnapshot {
+  tracks: Track[];
+  byId: Map<string, Track>;
+  playlists: Playlist[];
+  loading: boolean;
+}
+
+let library: LibrarySnapshot = {
+  tracks: [],
+  byId: new Map(),
+  playlists: [],
+  loading: true,
+};
+const libListeners = new Set<() => void>();
+let unsubDb: (() => void) | null = null;
+
+async function reloadLibrary() {
+  const [tracks, playlists] = await Promise.all([
+    getAllTracks(),
+    getPlaylists(),
+  ]);
+  const byId = new Map(tracks.map(t => [t.id, t]));
+  library = { tracks, byId, playlists, loading: false };
+  PlayerService.refreshFromLibrary(byId);
+  libListeners.forEach(fn => fn());
+}
+
+function subscribeLib(fn: () => void) {
+  libListeners.add(fn);
+  if (!unsubDb) {
+    unsubDb = subscribeLibrary(reloadLibrary);
+    reloadLibrary();
+  }
+  return () => {
+    libListeners.delete(fn);
+  };
+}
+
+/** The same shared library, outside React (the car bridge). */
+export const subscribeLibrarySnapshot = subscribeLib;
+export const getLibrarySnapshot = () => library;
+
+/** All library tracks (newest first) and playlists, kept fresh as the library changes. */
+export const useLibrary = () =>
+  useSyncExternalStore(subscribeLib, () => library);

@@ -1,0 +1,92 @@
+# Builds a signed APK and publishes it as a GitHub Release.
+#
+# Start one by pushing a version tag:
+#   git tag v1.0.0 && git push origin v1.0.0
+# or from the Actions tab (Run workflow) with a version number.
+#
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   the release keystore file, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD its store password
+#   ANDROID_KEY_ALIAS         the key alias
+#   ANDROID_KEY_PASSWORD      the key password
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, like 1.2.0'
+        required: true
+
+permissions:
+  contents: write # to create the release
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Version from the tag
+        id: version
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${RAW#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          # 1.2.3 → 10203: always higher for a higher version, so phones accept the update.
+          CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      - name: Release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+
+      - name: Build the APK
+        working-directory: android
+        env:
+          # Gradle reads ORG_GRADLE_PROJECT_<name> as the project property <name>.
+          ORG_GRADLE_PROJECT_STASH_UPLOAD_STORE_FILE: release.keystore
+          ORG_GRADLE_PROJECT_STASH_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_STASH_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_STASH_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # Phones only (ARM): half the build time of also building the emulator (x86) versions.
+        run: >
+          ./gradlew assembleRelease --no-daemon
+          -PstashVersionName=${{ steps.version.outputs.name }}
+          -PstashVersionCode=${{ steps.version.outputs.code }}
+          -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Name the APK and its checksum
+        run: |
+          APK="stash-${{ steps.version.outputs.name }}.apk"
+          mv android/app/build/outputs/apk/release/app-release.apk "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+          rm -f android/app/release.keystore
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          name: stash ${{ steps.version.outputs.name }}
+          generate_release_notes: true
+          files: |
+            stash-${{ steps.version.outputs.name }}.apk
+            stash-${{ steps.version.outputs.name }}.apk.sha256
