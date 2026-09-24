@@ -18,6 +18,15 @@ const DECODABLE = /\.(mp3|m4a|mp4|aac|wav|flac|ogg|oga|opus)$/i;
 
 const pending = new Map<string, Promise<number[] | null>>();
 
+/**
+ * The decoder needs a file:// URI: in release builds on Android it reads any
+ * other string as an asset bundled in the app ("Could not read asset bytes"),
+ * so a plain path worked in development only. It URL-decodes the path, so
+ * each part is encoded to survive names with %, #, spaces…
+ */
+const fileUri = (path: string) =>
+  'file://' + path.split('/').map(encodeURIComponent).join('/');
+
 /** Bar heights 0..100 from mono PCM: RMS per slice, scaled so the loudest bar is 100. */
 export function barsFromSamples(
   samples: Float32Array,
@@ -52,7 +61,10 @@ export function ensureWaveform(track: Track): Promise<number[] | null> {
 
   const job = (async () => {
     try {
-      const buffer = await decodeAudioData(track.filePath!, DECODE_RATE);
+      const buffer = await decodeAudioData(
+        fileUri(track.filePath!),
+        DECODE_RATE,
+      );
       const bars = barsFromSamples(buffer.getChannelData(0));
       await updateTrack(track.id, { waveform: bars });
       return bars;

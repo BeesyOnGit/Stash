@@ -134,6 +134,10 @@ export function PlayerScreen() {
       : ACCENT
     : ink;
 
+  const showSave = track.status === 'streaming' && online;
+  // Save offline + Random + speed don't fit next to the full text: keep just the ring.
+  const compactStatus = st.radio && showSave;
+
   const next =
     st.queue[st.index + 1] ?? (st.repeat === 'all' ? st.queue[0] : null);
   const upNext = next
@@ -290,15 +294,25 @@ export function PlayerScreen() {
         </View>
 
         <View style={styles.statusRow}>
-          <View style={[styles.statusChip, { backgroundColor: chip }]}>
+          <View
+            accessible
+            accessibilityLabel={status}
+            style={[
+              styles.statusChip,
+              compactStatus && styles.statusChipCompact,
+              { backgroundColor: chip },
+            ]}
+          >
             <RingIcon
               color={ring}
               track={deep ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}
               progress={buffered}
             />
-            <Text style={[font(500, 12), { color: ink }]}>{status}</Text>
+            {!compactStatus && (
+              <Text style={[font(500, 12), { color: ink }]}>{status}</Text>
+            )}
           </View>
-          {track.status === 'streaming' && online && (
+          {showSave && (
             <Pressable
               onPress={() => PlayerService.saveOffline(track)}
               style={[styles.saveBtn, { backgroundColor: ink }]}
@@ -669,6 +683,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     flexShrink: 1,
   },
+  statusChipCompact: { paddingRight: 7 },
   saveBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   radioChip: {
     flexDirection: 'row',

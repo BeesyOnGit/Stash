@@ -11,7 +11,9 @@ import { removeFile } from './paths';
 export async function deleteFromLibrary(track: Track) {
   cancelDownload(track.id);
   PlayerService.removeFromQueue(track.id);
-  if (track.source !== 'device') await removeFile(track.filePath);
-  await removeFile(track.artworkPath);
+  if (track.source !== 'device') {
+    await removeFile(track.filePath).catch(() => {});
+  }
+  await removeFile(track.artworkPath).catch(() => {});
   await deleteTrackRow(track.id);
 }

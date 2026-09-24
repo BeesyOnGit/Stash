@@ -3,12 +3,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Splash } from './src/components/Splash';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { convertOldDownloads } from './src/services/convert';
+import { keepOldDownloads } from './src/services/keep';
 import {
   cleanupInterruptedDownloads,
   onDownloadFinished,
 } from './src/services/downloader';
 import { ensureDirs } from './src/services/paths';
-import { checkForUpdate } from './src/services/updater';
+import { startUpdateChecks } from './src/services/updater';
 import { openSheet, toast } from './src/state/ui';
 
 export default function App() {
@@ -17,14 +18,15 @@ export default function App() {
       await ensureDirs();
       await cleanupInterruptedDownloads();
       await convertOldDownloads();
+      await keepOldDownloads(); // to Music/stash, so they survive an uninstall
     })().catch(e => console.warn('Startup failed', e));
 
     // New version on GitHub? Asked once per start, after the splash has gone.
-    const updateTimer = setTimeout(() => {
-      checkForUpdate()
-        .then(release => release && openSheet({ kind: 'update', release }))
-        .catch(() => {}); // offline, or GitHub unreachable: try next start
-    }, 3000);
+    const updateTimer = setTimeout(
+      () =>
+        startUpdateChecks(release => openSheet({ kind: 'update', release })),
+      3000,
+    );
 
     const stopListening = onDownloadFinished((track, ok) =>
       toast(

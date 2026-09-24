@@ -19,6 +19,7 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 - Search looks in your library first, then online sources.
 - Online songs start playing right away and are saved at the same time, so the second play is offline. Saved files are always M4A, and nothing is ever saved twice.
 - A storage limit you choose, and a Saving tab to see what's saving and saved.
+- Saved songs live in the phone's **Music/stash** folder, so uninstalling the app keeps them. After reinstalling, Settings → Scan for music brings them back as the same songs (titles and covers are looked up again).
 
 **Player**
 - Queue, shuffle, repeat, and a waveform seek bar drawn from the song itself.

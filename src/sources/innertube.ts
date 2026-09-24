@@ -219,3 +219,33 @@ export async function innertubeLyrics(
     return null; // no lyrics tab for this song
   }
 }
+
+/** Title, artist, length and cover of a video, by id (songs restored after a reinstall). */
+export async function innertubeVideoDetails(videoId: string): Promise<{
+  title: string;
+  artist: string | null;
+  duration: number | null;
+  thumbnailUrl: string | null;
+} | null> {
+  const yt = await getSession();
+  try {
+    const info = (await yt.getBasicInfo(videoId)) as any;
+    const b = info?.basic_info;
+    if (!b?.title) return null;
+    const thumbs = [...(b.thumbnail ?? [])].sort(
+      (x: any, y: any) => (y.width ?? 0) - (x.width ?? 0),
+    );
+    const { title, artist } = splitArtistTitle(
+      String(b.title),
+      b.author ? String(b.author) : null,
+    );
+    return {
+      title,
+      artist,
+      duration: b.duration ?? null,
+      thumbnailUrl: thumbs[0]?.url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}

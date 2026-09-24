@@ -7,6 +7,7 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 import { deleteTrackRow, getTracksByStatus, updateTrack } from '../db/database';
 import type { ResolvedStream, Track } from '../types';
 import { convertToM4a, needsConversion } from './convert';
+import { KEEP_DIR, downloadFolder, keepAfterUninstall } from './keep';
 import { MUSIC_DIR, removeFile, safeFileName } from './paths';
 import { ensureWaveform } from './waveform';
 
@@ -74,10 +75,17 @@ export async function downloadTrack(
 ): Promise<void> {
   if (active.has(track.id)) return;
 
-  let path = `${MUSIC_DIR}/${safeFileName(track.id)}.${extensionFor(
-    stream.mimeType,
-    stream.url,
-  )}`;
+  const name = safeFileName(track.id);
+  const ext = extensionFor(stream.mimeType, stream.url);
+  // Saved straight into Music/stash (kept if the app is uninstalled). Files
+  // that are converted first (WebM, Ogg) wait in the private folder: the Music
+  // folder only accepts finished audio files.
+  const folder = await downloadFolder();
+  let path = `${
+    needsConversion(`x.${ext}`) ? MUSIC_DIR : folder
+  }/${name}.${ext}`;
+  // Chunks are appended from the private folder too.
+  const part = `${MUSIC_DIR}/${name}.part`;
   const job: Job = { task: null, cancelled: false };
   active.set(track.id, job);
   progress.set(track.id, 0);
@@ -110,7 +118,6 @@ export async function downloadTrack(
     if (stream.chunked && total > 0) {
       // Ranged chunks appended into one file: full speed, and the saved file is
       // exactly the original audio stream (no re-encoding).
-      const part = `${path}.part`;
       for (let start = 0; start < total; start += CHUNK_BYTES) {
         const end = Math.min(total - 1, start + CHUNK_BYTES - 1);
         const status = await fetchTo(
@@ -132,7 +139,11 @@ export async function downloadTrack(
       if (status >= 400) throw new Error(`Download failed (HTTP ${status})`);
     }
     // Opus/WebM or Ogg from YouTube's fallback → M4A like every other download.
-    if (needsConversion(path)) path = (await convertToM4a(path)) ?? path;
+    if (needsConversion(path)) {
+      path = (await convertToM4a(path, folder)) ?? path;
+    }
+    // Anything still in the private folder (e.g. a conversion that failed) moves to Music/stash.
+    path = await keepAfterUninstall(track, path);
     const stat = await ReactNativeBlobUtil.fs.stat(path).catch(() => null);
     await updateTrack(track.id, {
       filePath: path,
@@ -145,7 +156,7 @@ export async function downloadTrack(
   } catch (e) {
     // Don't leave half files or "ghost" entries in the library; the song can simply be played again.
     await removeFile(path).catch(() => {});
-    await removeFile(`${path}.part`).catch(() => {});
+    await removeFile(part).catch(() => {});
     await deleteTrackRow(track.id);
     console.warn(`Download of ${track.title} failed`, e);
     finishedListeners.forEach(fn => fn(track, false));
@@ -169,14 +180,17 @@ export async function cleanupInterruptedDownloads(): Promise<void> {
     t => !active.has(t.id),
   );
   if (!interrupted.length) return;
-  const files = await ReactNativeBlobUtil.fs
-    .ls(MUSIC_DIR)
-    .catch(() => [] as string[]);
-  for (const t of interrupted) {
-    const prefix = `${safeFileName(t.id)}.`;
-    for (const f of files.filter(name => name.startsWith(prefix))) {
-      await removeFile(`${MUSIC_DIR}/${f}`).catch(() => {});
+  // Half files can be in either folder (see downloadTrack).
+  for (const dir of [MUSIC_DIR, KEEP_DIR]) {
+    const files = await ReactNativeBlobUtil.fs
+      .ls(dir)
+      .catch(() => [] as string[]);
+    for (const t of interrupted) {
+      const prefix = `${safeFileName(t.id)}.`;
+      for (const f of files.filter(name => name.startsWith(prefix))) {
+        await removeFile(`${dir}/${f}`).catch(() => {});
+      }
     }
-    await deleteTrackRow(t.id);
   }
+  for (const t of interrupted) await deleteTrackRow(t.id);
 }

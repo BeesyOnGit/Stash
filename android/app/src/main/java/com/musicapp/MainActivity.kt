@@ -1,10 +1,12 @@
 package com.musicapp
 
+import android.content.Intent
 import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.musicapp.update.UpdaterModule
 
 class MainActivity : ReactActivity() {
 
@@ -20,6 +22,17 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(null)
+    noteUpdateTap(intent)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    noteUpdateTap(intent)
+  }
+
+  /** Opened from the "update available" notification: JS shows the update sheet. */
+  private fun noteUpdateTap(intent: Intent?) {
+    if (intent?.action == UpdaterModule.ACTION_OPEN_UPDATE) UpdaterModule.openRequested = true
   }
 
   /**

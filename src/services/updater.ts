@@ -8,7 +8,12 @@
  * key, so Android wouldn't accept a release over them.
  * Native side: update/UpdaterModule.kt. Releases: .github/workflows/release.yml.
  */
-import { AppState, NativeModules, Platform } from 'react-native';
+import {
+  AppState,
+  NativeModules,
+  PermissionsAndroid,
+  Platform,
+} from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { removeFile } from './paths';
 
@@ -21,6 +26,9 @@ interface UpdaterNative {
   canInstall(): Promise<boolean>;
   openInstallPermission(): void;
   install(path: string): Promise<void>;
+  showNotification(version: string, text: string): void;
+  cancelNotification(): void;
+  takeOpenRequest(): boolean;
 }
 
 const Native: UpdaterNative | undefined =
@@ -81,6 +89,50 @@ export async function checkForUpdate(): Promise<Release | null> {
     shaUrl: sha?.browser_download_url ?? null,
     size: apk.size ?? null,
   };
+}
+
+// ---- checking at start, with a notification that stays until updated ----
+
+let known: Release | null = null;
+
+/**
+ * On every start: ask GitHub, and if there's a newer version show the update
+ * sheet and a notification that stays in the shade until the app is updated.
+ * Tapping the notification (even much later) opens the sheet again.
+ */
+export function startUpdateChecks(show: (release: Release) => void) {
+  if (!Native) return;
+  const openIfAsked = () => {
+    if (Native.takeOpenRequest() && known) show(known);
+  };
+  AppState.addEventListener('change', state => {
+    if (state === 'active') openIfAsked();
+  });
+  checkForUpdate()
+    .then(async release => {
+      known = release;
+      if (!release) {
+        Native.cancelNotification(); // up to date (e.g. just updated)
+        return;
+      }
+      show(release);
+      if (await notificationsAllowed()) {
+        Native.showNotification(
+          release.version,
+          'Tap to update — your library stays as it is.',
+        );
+      }
+      openIfAsked();
+    })
+    .catch(() => {}); // offline, or GitHub unreachable: try next start
+}
+
+/** Android 13+ asks the user once; before that notifications are always allowed. */
+async function notificationsAllowed() {
+  if (Platform.OS !== 'android' || Number(Platform.Version) < 33) return true;
+  const perm = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS;
+  if (await PermissionsAndroid.check(perm)) return true;
+  return (await PermissionsAndroid.request(perm)) === 'granted';
 }
 
 /** GitHub's generated notes are Markdown: keep them readable as plain text. */

@@ -25,9 +25,14 @@ export const needsConversion = (path: string) =>
  * Converts a downloaded file to M4A next to it and deletes the original.
  * Returns the new path, or null if it couldn't (the original is kept and still plays).
  */
-export async function convertToM4a(path: string): Promise<string | null> {
+export async function convertToM4a(
+  path: string,
+  outDir?: string,
+): Promise<string | null> {
   if (!needsConversion(path)) return null;
-  const out = path.replace(NEEDS_CONVERSION, '.m4a');
+  const out = outDir
+    ? `${outDir}/${path.split('/').pop()!.replace(NEEDS_CONVERSION, '.m4a')}`
+    : path.replace(NEEDS_CONVERSION, '.m4a');
   try {
     await Native!.toM4a(path, out);
     await removeFile(path).catch(() => {});

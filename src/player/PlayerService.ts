@@ -107,6 +107,8 @@ class PlayerServiceImpl {
   private progressListeners = new Set<Listener>();
   /** Increments on every load so late async results for an old song are ignored. */
   private loadToken = 0;
+  /** The user wants sound (play pressed, not paused since): for spotting a dead player. */
+  private wantsToPlay = false;
   /** Songs already picked in this run of random suggestions (no repeats). */
   private radioPlayed = new Set<string>();
   /** Resolved stream URLs of online songs (short-lived, so kept in memory only). */
@@ -271,6 +273,7 @@ class PlayerServiceImpl {
     } else {
       await this.player.replaceSourceAsync(config);
     }
+    this.applyLoop();
     if (token !== this.loadToken) return;
     if (autoplay) this.play();
   }
@@ -440,12 +443,72 @@ class PlayerServiceImpl {
   // ---------- transport ----------
 
   play() {
-    if (!this.player) return;
-    this.player.play();
+    const p = this.player;
+    this.wantsToPlay = true;
+    if (!p) {
+      this.revive();
+      return;
+    }
+    try {
+      p.play();
+    } catch {
+      this.revive();
+      return;
+    }
     // iOS: AVPlayer starts at 1× unless told otherwise (and setting a rate while
     // paused would start playback, so it's only applied once playing).
     const speed = getSettings().playbackSpeed;
-    if (Platform.OS === 'ios' && speed !== 1) this.player.rate = speed;
+    if (Platform.OS === 'ios' && speed !== 1) p.rate = speed;
+    // The native player can be torn down behind our back (e.g. the app swiped
+    // away from recents stops the playback service). If nothing starts, rebuild it.
+    const token = this.loadToken;
+    setTimeout(() => {
+      if (
+        this.wantsToPlay &&
+        this.player === p &&
+        token === this.loadToken &&
+        !this.nativePlaying() &&
+        !this.state.isBuffering &&
+        !this.state.isResolving
+      ) {
+        this.revive();
+      }
+    }, 1500);
+  }
+
+  /** Asked the player itself: our state can be stale if the native side went away. */
+  private nativePlaying(): boolean {
+    try {
+      return !!this.player?.isPlaying;
+    } catch {
+      return false;
+    }
+  }
+
+  private reviving = false;
+
+  /** A fresh native player for the current song, at the same position. */
+  private async revive() {
+    const cur = this.current;
+    if (!cur || this.reviving) return;
+    this.reviving = true;
+    const at = this.progress.position;
+    const old = this.player;
+    this.player = null;
+    try {
+      old?.release();
+    } catch {}
+    try {
+      await this.load(this.state.index, true);
+      // load() just made a new player (TypeScript still sees the null set above).
+      // Resume where it was, unless it had reached the end (then from the start).
+      const end = this.progress.duration || cur.duration || 0;
+      if (at > 1 && (!end || at < end - 2)) {
+        (this.player as VideoPlayer | null)?.seekTo(at);
+      }
+    } finally {
+      this.reviving = false;
+    }
   }
 
   /** Playback speed for everything you play; pitch stays the same. */
@@ -462,10 +525,17 @@ class PlayerServiceImpl {
     this.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
   }
   pause() {
-    this.player?.pause();
+    this.wantsToPlay = false;
+    try {
+      this.player?.pause();
+    } catch {}
+    // A dead player sends no event: don't leave the button showing "pause".
+    if (this.state.isPlaying && !this.nativePlaying()) {
+      this.setState({ isPlaying: false });
+    }
   }
   togglePlay() {
-    if (this.state.isPlaying) this.pause();
+    if (this.nativePlaying()) this.pause();
     else this.play();
   }
 
@@ -516,9 +586,17 @@ class PlayerServiceImpl {
     };
     const repeat = next[this.state.repeat];
     this.setState({ repeat });
+    this.applyLoop();
     toast(
       { off: 'Repeat off', all: 'Repeat all', one: 'Repeat this song' }[repeat],
     );
+  }
+
+  /** Repeat one is done by the native player itself, so it works with the screen off. */
+  private applyLoop() {
+    try {
+      if (this.player) this.player.loop = this.state.repeat === 'one';
+    } catch {}
   }
 
   toggleShuffle() {
@@ -617,6 +695,7 @@ class PlayerServiceImpl {
    * The next song played starts a fresh player.
    */
   stop() {
+    this.wantsToPlay = false;
     this.loadToken++; // ignore any stream still being resolved
     const p = this.player;
     this.player = null;
@@ -678,13 +757,20 @@ class PlayerServiceImpl {
     if (changed) this.setState({ queue, context });
   }
 
+  /**
+   * Runs with the screen off too: the next song may need its stream resolved,
+   * which waits on JS timers that Android pauses in the background (whileAway).
+   */
   private onTrackEnded() {
-    if (this.state.repeat === 'one') {
-      this.seekTo(0);
-      this.play();
-      return;
-    }
-    this.next(true);
+    whileAway(async () => {
+      if (this.state.repeat === 'one') {
+        // Normally looped natively (applyLoop); this is the fallback.
+        this.seekTo(0);
+        this.play();
+        return;
+      }
+      await this.next(true);
+    }).catch(() => {});
   }
 }
 

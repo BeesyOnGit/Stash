@@ -9,10 +9,13 @@ import {
   deleteTrackRow,
   getDeviceTrackIds,
   getTrack,
+  updateTrack,
   upsertTrack,
 } from '../db/database';
 import { trackIdFor, type Track } from '../types';
 import { ensureArtwork } from './artwork';
+import { KEEP_DIR, parseKeptFileName } from './keep';
+import { innertubeVideoDetails } from '../sources/innertube';
 
 const AUDIO_EXT = /\.(mp3|m4a|aac|flac|ogg|opus|wav|wma|amr)$/i;
 const MAX_DEPTH = 6;
@@ -92,8 +95,40 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
   const known = await getDeviceTrackIds();
   const found = new Set<string>();
   const added: Track[] = [];
+  const restored: Track[] = [];
 
   for (const { path, size } of files) {
+    // A download kept in Music/stash (e.g. after reinstalling): the same song again.
+    const kept = path.startsWith(KEEP_DIR)
+      ? parseKeptFileName(path.split('/').pop() ?? '')
+      : null;
+    if (kept) {
+      const keptId = trackIdFor(kept.source, kept.sourceId);
+      if (await getTrack(keptId)) continue; // already in the library
+      const track: Track = {
+        id: keptId,
+        source: kept.source,
+        sourceId: kept.sourceId,
+        title: kept.sourceId, // replaced by the real title right after (restoreDetails)
+        artist: null,
+        album: null,
+        genre: null,
+        duration: null,
+        filePath: path,
+        artworkPath: null,
+        remoteArtworkUrl: null,
+        status: 'ready',
+        liked: false,
+        sizeBytes: size,
+        waveform: null,
+        addedAt: Date.now(),
+        savedAt: Date.now(),
+        lastPlayedAt: null,
+      };
+      await upsertTrack(track);
+      restored.push(track);
+      continue;
+    }
     const id = trackIdFor('device', path);
     found.add(id);
     if (known.has(id)) continue;
@@ -130,13 +165,36 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
     }
   }
 
-  // Covers are fetched in the background, one at a time, so the scan result shows immediately.
+  // Covers (and restored songs' titles) are fetched in the background, one at a
+  // time, so the scan result shows immediately.
   (async () => {
+    for (const t of restored) await restoreDetails(t).catch(() => {});
     for (const t of added) {
       const fresh = await getTrack(t.id);
       if (fresh) await ensureArtwork(fresh, true);
     }
   })();
 
-  return { added: added.length, removed, total: found.size };
+  return {
+    added: added.length + restored.length,
+    removed,
+    total: found.size + restored.length,
+  };
+}
+
+/** A song restored from Music/stash: its title, artist and cover, looked up online by id. */
+async function restoreDetails(t: Track) {
+  if (t.source === 'youtube') {
+    const d = await innertubeVideoDetails(t.sourceId);
+    if (d) {
+      await updateTrack(t.id, {
+        title: d.title,
+        artist: d.artist,
+        duration: d.duration,
+        remoteArtworkUrl: d.thumbnailUrl,
+      });
+    }
+  }
+  const fresh = await getTrack(t.id);
+  if (fresh) await ensureArtwork(fresh, true);
 }

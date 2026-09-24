@@ -2,7 +2,11 @@ import ReactNativeBlobUtil from 'react-native-blob-util';
 
 const { fs } = ReactNativeBlobUtil;
 
-/** App-private storage: survives restarts, removed on uninstall, not visible to other apps. */
+/**
+ * App-private storage: survives restarts, removed on uninstall, not visible to
+ * other apps. Downloads only pass through here: finished ones move to
+ * Music/stash (services/keep.ts) so they outlive the app.
+ */
 export const MUSIC_DIR = `${fs.dirs.DocumentDir}/music`;
 export const ARTWORK_DIR = `${fs.dirs.DocumentDir}/artwork`;
 
