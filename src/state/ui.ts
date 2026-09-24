@@ -3,6 +3,7 @@
  * bottom sheets (song menu, add to playlist, new playlist, queue, speed, similar).
  */
 import { useSyncExternalStore } from 'react';
+import type { Release } from '../services/updater';
 import type { QueueItem } from '../types';
 
 export type Sheet =
@@ -11,7 +12,8 @@ export type Sheet =
   | { kind: 'new' }
   | { kind: 'queue' }
   | { kind: 'speed' }
-  | { kind: 'similar'; track: QueueItem };
+  | { kind: 'similar'; track: QueueItem }
+  | { kind: 'update'; release: Release };
 
 interface UiState {
   toast: { text: string; at: number } | null;

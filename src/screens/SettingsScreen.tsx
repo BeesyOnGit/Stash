@@ -27,6 +27,11 @@ import { useOnline } from '../services/network';
 import { hapticsSupported } from '../services/haptics';
 import { formatBytes } from '../services/storage';
 import {
+  checkForUpdate,
+  installedVersion,
+  updatesSupported,
+} from '../services/updater';
+import {
   ACCENT,
   GREEN_LIGHT,
   WARN,
@@ -66,6 +71,25 @@ export function SettingsScreen() {
   const previewPalette = preview ? paletteFor(preview) : null;
   const previewArt = preview ? artworkUri(preview) : null;
   const ring = RING_COLORS.find(r => r.value === s.bubbleRingColor)!;
+
+  const version = installedVersion();
+  const [checking, setChecking] = useState(false);
+  const checkUpdates = async () => {
+    if (version?.debug) {
+      toast('Development build — updates come as release APKs from GitHub');
+      return;
+    }
+    setChecking(true);
+    try {
+      const release = await checkForUpdate();
+      if (release) openSheet({ kind: 'update', release });
+      else toast('You’re up to date');
+    } catch {
+      toast('Couldn’t reach GitHub — check your connection');
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const setBubble = async (on: boolean) => {
     if (!on) return saveSettings({ floatingBubble: false });
@@ -540,14 +564,34 @@ export function SettingsScreen() {
         </>
       )}
 
+      {updatesSupported() && (
+        <>
+          <Section title="App" />
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: t.card, borderColor: t.line },
+            ]}
+          >
+            <Row
+              title={checking ? 'Checking…' : 'Check for updates'}
+              sub="New versions from GitHub are offered at every start"
+              onPress={checking ? undefined : checkUpdates}
+              right={<ChevronRightIcon color={t.muted} />}
+            />
+          </View>
+        </>
+      )}
+
       <View style={styles.about}>
         <LogoMark size={40} />
-        <View>
+        <View style={styles.flex}>
           <Text style={[font(700, 17), { color: t.ink, letterSpacing: -0.5 }]}>
             stash
           </Text>
           <Text style={[mono(400, 12), { color: t.muted }]}>
-            Version 2.0
+            Version {version?.name || '2.0'}
+            {version?.debug ? ' (development)' : ''}
             {Platform.OS === 'android' ? ' · works with Android Auto' : ''}
           </Text>
         </View>

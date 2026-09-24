@@ -10,6 +10,7 @@ import com.musicapp.audio.AudioPackage
 import com.musicapp.bubble.BubblePackage
 import com.musicapp.car.CarPackage
 import com.musicapp.haptics.HapticsPackage
+import com.musicapp.update.UpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -22,6 +23,7 @@ class MainApplication : Application(), ReactApplication {
           add(BubblePackage()) // floating bubble (src/bubble/BubbleBridge.ts)
           add(HapticsPackage()) // button haptics (src/services/haptics.ts)
           add(AudioPackage()) // downloads → M4A (src/services/convert.ts)
+          add(UpdaterPackage()) // updates from GitHub Releases (src/services/updater.ts)
         },
     )
   }

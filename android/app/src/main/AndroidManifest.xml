@@ -21,6 +21,9 @@
     <!-- Medium / Strong button haptics (haptics/Haptics.kt); granted automatically -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- In-app updates from GitHub Releases (update/UpdaterModule.kt); the user confirms each install -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -75,5 +78,15 @@
         android:authorities="${applicationId}.artwork"
         android:exported="true"
         tools:ignore="ExportedContentProvider" />
+      <!-- The downloaded update, handed to the system installer -->
+      <provider
+        android:name=".update.UpdateFileProvider"
+        android:authorities="${applicationId}.updates"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/update_paths" />
+      </provider>
     </application>
 </manifest>

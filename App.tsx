@@ -8,7 +8,8 @@ import {
   onDownloadFinished,
 } from './src/services/downloader';
 import { ensureDirs } from './src/services/paths';
-import { toast } from './src/state/ui';
+import { checkForUpdate } from './src/services/updater';
+import { openSheet, toast } from './src/state/ui';
 
 export default function App() {
   useEffect(() => {
@@ -18,13 +19,24 @@ export default function App() {
       await convertOldDownloads();
     })().catch(e => console.warn('Startup failed', e));
 
-    return onDownloadFinished((track, ok) =>
+    // New version on GitHub? Asked once per start, after the splash has gone.
+    const updateTimer = setTimeout(() => {
+      checkForUpdate()
+        .then(release => release && openSheet({ kind: 'update', release }))
+        .catch(() => {}); // offline, or GitHub unreachable: try next start
+    }, 3000);
+
+    const stopListening = onDownloadFinished((track, ok) =>
       toast(
         ok
           ? `“${track.title}” saved — plays offline now`
           : `Couldn't save “${track.title}”`,
       ),
     );
+    return () => {
+      clearTimeout(updateTimer);
+      stopListening();
+    };
   }, []);
 
   return (

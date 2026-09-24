@@ -33,6 +33,7 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 - **Android Auto**: library, playlists and suggestions in the car, with Like, Speed and Shuffle buttons and voice search.
 - **Haptic feedback** on buttons, light / medium / strong.
 - Background playback with notification and lock-screen controls.
+- **Updates from GitHub Releases**: new versions are offered when the app starts (or Settings → Check for updates), downloaded, checked against their checksum and installed over the old one, keeping your library.
 
 ## Build
 
@@ -48,7 +49,9 @@ npm start          # Metro, keep it running
 npm run android    # in a second terminal, with the phone plugged in
 ```
 
-Release APK: `cd android && ./gradlew assembleRelease`. Set up your own signing key first (`STASH_UPLOAD_STORE_FILE` and friends in `~/.gradle/gradle.properties`), and keep it: updates must be signed with the same key.
+Releases are built by GitHub Actions (`.github/workflows/release.yml`): push a tag like `v1.2.0` and a signed APK is published as a GitHub Release, which installed apps then offer as an update. It needs the signing key in the repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`.
+
+Local release APK: `cd android && ./gradlew assembleRelease`. Set up your own signing key first (`STASH_UPLOAD_STORE_FILE` and friends in `~/.gradle/gradle.properties`), and keep it: updates must be signed with the same key.
 
 Runs on Android 7.0+ (minSdk 24) and iOS 15.1+. For the optional [Jamendo](https://devportal.jamendo.com) catalogue, add a free client id in Settings.
 
@@ -67,6 +70,7 @@ src/
     similar.ts                  similar songs, with an offline fallback
     waveform.ts                 the player's waveform from the audio file
     keepAlive.ts                keeps work going while the app is in the background
+    updater.ts                  checks GitHub Releases and installs new versions
     haptics.ts, settings.ts, artwork.ts, deviceScanner.ts, storage.ts …
   bubble/BubbleBridge.ts        floating bubble (Android)
   car/CarBridge.ts              Android Auto
@@ -77,6 +81,7 @@ android/app/src/main/java/com/musicapp/
   car/                          Android Auto service
   audio/                        M4A conversion with the phone's codecs
   haptics/                      button haptics
+  update/                       hands downloaded updates to Android's installer
 ```
 
 ## How a few things work

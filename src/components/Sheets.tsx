@@ -3,7 +3,7 @@
  * playback speed, similar songs.
  */
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { createPlaylist, togglePlaylistTrack } from '../db/database';
 import { navigationRef, openCollection } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
@@ -18,6 +18,12 @@ import {
   type Similar,
 } from '../services/similar';
 import { formatBytes } from '../services/storage';
+import {
+  downloadAndInstall,
+  installedVersion,
+  type InstallStep,
+  type Release,
+} from '../services/updater';
 import {
   closeSheet,
   openSheet,
@@ -56,6 +62,7 @@ export function Sheets() {
       {sheet?.kind === 'queue' && <QueueSheet />}
       {sheet?.kind === 'speed' && <SpeedSheet />}
       {sheet?.kind === 'similar' && <SimilarSheet track={sheet.track} />}
+      {sheet?.kind === 'update' && <UpdateSheet release={sheet.release} />}
     </Sheet>
   );
 }
@@ -479,6 +486,98 @@ function QueueSheet() {
   );
 }
 
+/** "A new version is out": what's new, then download → check → install. */
+function UpdateSheet({ release }: { release: Release }) {
+  const t = useTheme();
+  const [step, setStep] = useState<InstallStep | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const current = installedVersion()?.name;
+  const busy = !!step && !error;
+
+  const start = async () => {
+    setError(null);
+    try {
+      await downloadAndInstall(release, setStep);
+      closeSheet(); // Android's installer takes it from here
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setStep(null);
+    }
+  };
+
+  const label = !step
+    ? 'Update'
+    : step.step === 'downloading'
+    ? `Downloading ${Math.round(step.progress * 100)}%`
+    : step.step === 'verifying'
+    ? 'Checking the download…'
+    : step.step === 'permission'
+    ? 'Allow installing, then come back'
+    : 'Opening the installer…';
+
+  return (
+    <View style={styles.pad}>
+      <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
+        Update available
+      </Text>
+      <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
+        stash {release.version}
+        {current ? ` · you have ${current}` : ''}
+        {release.size ? ` · ${formatBytes(release.size)}` : ''}
+      </Text>
+      {!!release.notes && (
+        <ScrollView
+          style={[styles.notes, { backgroundColor: t.fill }]}
+          contentContainerStyle={styles.notesPad}
+        >
+          <Text style={[font(400, 14, 1.45), { color: t.ink2 }]}>
+            {release.notes}
+          </Text>
+        </ScrollView>
+      )}
+      <Text style={[font(400, 12, 1.4), styles.mt10, { color: t.muted }]}>
+        Your library, downloads and settings stay as they are.
+      </Text>
+      {!!error && (
+        <Text style={[font(500, 13), styles.mt10, { color: t.danger }]}>
+          {error}
+        </Text>
+      )}
+      <Pressable
+        haptic="confirm"
+        disabled={busy}
+        onPress={start}
+        style={({ pressed }) => [
+          styles.randomBtn,
+          { backgroundColor: t.ink, opacity: pressed || busy ? 0.85 : 1 },
+        ]}
+      >
+        {busy && step?.step !== 'downloading' && (
+          <Spinner color={t.onInk} track="rgba(255,255,255,0.3)" />
+        )}
+        <Text style={[font(600, 14), { color: t.onInk }]}>
+          {error ? 'Try again' : label}
+        </Text>
+      </Pressable>
+      {step?.step === 'downloading' && (
+        <View style={[styles.updateBar, { backgroundColor: t.fill3 }]}>
+          <View
+            style={[
+              styles.updateFill,
+              { width: `${step.progress * 100}%`, backgroundColor: t.ink },
+            ]}
+          />
+        </View>
+      )}
+      {!busy && (
+        <Pressable onPress={closeSheet} style={styles.laterBtn}>
+          <Text style={[font(500, 14), { color: t.muted }]}>Later</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 function SpeedSheet() {
   const t = useTheme();
   const { playbackSpeed } = useSettings();
@@ -767,6 +866,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   speedHint: { opacity: 0.7 },
+  notes: { marginTop: 14, maxHeight: 220, borderRadius: 14 },
+  notesPad: { padding: 14 },
+  updateBar: { height: 4, borderRadius: 2, marginTop: 10, overflow: 'hidden' },
+  updateFill: { height: '100%' },
+  laterBtn: { alignItems: 'center', paddingVertical: 14 },
   randomBtn: {
     marginTop: 14,
     height: 46,

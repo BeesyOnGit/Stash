@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Where the downloaded update APK lives (src/services/updater.ts), shared with the installer only. -->
+<paths>
+  <cache-path name="updates" path="updates/" />
+</paths>
