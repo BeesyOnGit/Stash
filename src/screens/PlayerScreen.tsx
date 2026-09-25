@@ -10,7 +10,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PlayerService } from '../player/PlayerService';
+import {
+  PlayerService,
+  type MoveDir,
+  type Progress,
+} from '../player/PlayerService';
 import {
   useCurrentTrack,
   useDownloadProgress,
@@ -20,7 +24,7 @@ import {
 } from '../player/hooks';
 import { useOnline } from '../services/network';
 import { haptic, type HapticKind } from '../services/haptics';
-import { speedLabel, useSettings } from '../services/settings';
+import { speedLabel, useSettings, type VinylStyle } from '../services/settings';
 import { WAVEFORM_BARS } from '../services/waveform';
 import { openSheet } from '../state/ui';
 import {
@@ -73,12 +77,99 @@ function withContrast(bars: number[]): number[] {
   return level.map(v => Math.round(14 + 86 * ((v - min) / range) ** 1.4));
 }
 
+/** A song change: the old song's page (background, cover, title, waveform) leaves, the new one comes in. */
+const CHANGE_MS = 460;
+/** Cross-fade (no direction): where in the change (0..1) the old ones are gone and the new ones start. */
+const SPLIT = 0.4;
+
+/** `t` when no change is running: everything shown as it is. */
+const SETTLED = new Animated.Value(1);
+
+interface Leaving {
+  track: QueueItem;
+  dir: MoveDir;
+  /** Where it was when it stopped, so its waveform leaves as it was. */
+  progress: Progress;
+}
+
+/**
+ * The song that was playing, for the moment it takes to fade out, and `t`
+ * going 0 → 1 over the change. The whole change runs natively from one value:
+ * right after a song change JS is busy, and anything waiting on it would stall.
+ */
+function useSongChange(live: QueueItem | null, dir: MoveDir) {
+  const lastProgress = useRef(new Map<string, Progress>());
+  const prev = useRef(live);
+  const [change, setChange] = useState<{
+    id: string | undefined;
+    leaving: Leaving | null;
+    t: Animated.Value;
+  }>({ id: live?.id, leaving: null, t: SETTLED });
+
+  useEffect(
+    () =>
+      PlayerService.subscribeProgress(() => {
+        const cur = PlayerService.current;
+        const p = PlayerService.getProgress();
+        if (!cur || !(p.duration > 0)) return;
+        const seen = lastProgress.current;
+        seen.set(cur.id, p);
+        if (seen.size > 8) seen.delete(seen.keys().next().value!);
+      }),
+    [],
+  );
+
+  // Worked out while rendering, and with a new value that starts at 0, so the
+  // first frame of the new song already has the old one on top. (Setting an
+  // existing value reaches the native side before the old layer is mounted.)
+  if (live && change.id !== live.id) {
+    const before = prev.current;
+    const leaving =
+      before && before.id !== live.id
+        ? {
+            track: before,
+            dir,
+            progress: lastProgress.current.get(before.id) ?? {
+              position: 0,
+              duration: before.duration ?? 0,
+            },
+          }
+        : null;
+    setChange({
+      id: live.id,
+      leaving,
+      t: leaving ? new Animated.Value(0) : SETTLED,
+    });
+  }
+  prev.current = live;
+
+  const { leaving, t } = change;
+  useEffect(() => {
+    if (!leaving) return;
+    const run = Animated.timing(t, {
+      toValue: 1,
+      duration: CHANGE_MS,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    });
+    run.start(({ finished }) => {
+      if (finished)
+        setChange(c => (c.leaving === leaving ? { ...c, leaving: null } : c));
+    });
+    return () => run.stop();
+  }, [leaving, t]);
+
+  return { t, leaving };
+}
+
 export function PlayerScreen() {
   const nav = useNavigation();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const track = useCurrentTrack();
+  const live = useCurrentTrack();
   const st = usePlayerState();
+  const { t, leaving: lv } = useSongChange(live, st.moveDir);
+  const track = live;
   const {
     playerStyle,
     playbackSpeed,
@@ -103,7 +194,7 @@ export function PlayerScreen() {
     }).start();
   }, [st.isPlaying, st.isBuffering, scale]);
 
-  if (!track) return <View style={styles.fill} />;
+  if (!track || !live) return <View style={styles.fill} />;
 
   const deep = playerStyle === 'deep';
   const P = paletteFor(track);
@@ -111,36 +202,182 @@ export function PlayerScreen() {
   const chip = deep ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.6)';
   const solid = deep ? P.deep : P.soft;
   const accentOn = deep ? P.accent : P.deep2;
-  const art = artworkUri(track);
+  // Next / Previous: the background, cover, title and waveform swipe like a
+  // page, the new song coming in from its side (right for Next, left for
+  // Previous). A new list has no side: they cross-fade instead.
+  const dir = lv?.dir ?? 0;
+  const inStyle = dir
+    ? {
+        transform: [
+          {
+            translateX: t.interpolate({
+              inputRange: [0, 1],
+              outputRange: [dir * width, 0],
+            }),
+          },
+        ],
+      }
+    : {
+        opacity: t.interpolate({
+          inputRange: [0, SPLIT, 1],
+          outputRange: [0, 0, 1],
+        }),
+      };
+  const outStyle = dir
+    ? {
+        transform: [
+          {
+            translateX: t.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -dir * width],
+            }),
+          },
+        ],
+      }
+    : {
+        opacity: t.interpolate({
+          inputRange: [0, SPLIT],
+          outputRange: [1, 0],
+          extrapolate: 'clamp',
+        }),
+      };
+  const oldInk = lv && (deep ? '#fff' : paletteFor(lv.track).softInk);
   const artSize = Math.min(300, width - 48, height * 0.36);
 
-  const local = track.status === 'ready';
-  const saving = track.status === 'downloading';
-  const buffered = local ? 1 : dl ?? 0;
-  const src = sourceLabel[track.source];
-  const status = st.isBuffering
-    ? `Buffering from ${src}`
-    : local
-    ? track.savedAt
-      ? 'Saved · plays offline'
-      : 'On device · offline'
-    : saving
-    ? `${src} · saving ${Math.round(buffered * 100)}%`
-    : `${src} · streaming only`;
-  const ring = local
-    ? deep
-      ? GREEN_LIGHT
-      : GREEN
-    : saving
-    ? deep
-      ? '#FF9A76'
-      : ACCENT
-    : ink;
+  /** What the title and status rows show for a song, in its colours. */
+  const songInfo = (tr: QueueItem, leavingSong: boolean) => {
+    const Pt = paletteFor(tr);
+    const inkT = deep ? '#fff' : Pt.softInk;
+    const localT = tr.status === 'ready';
+    const savingT = tr.status === 'downloading';
+    const bufT = localT ? 1 : leavingSong ? 0 : dl ?? 0;
+    const srcT = sourceLabel[tr.source];
+    const buffering = !leavingSong && st.isBuffering;
+    const showSaveT = tr.status === 'streaming' && online;
+    return {
+      P: Pt,
+      ink: inkT,
+      solid: deep ? Pt.deep : Pt.soft,
+      accentOn: deep ? Pt.accent : Pt.deep2,
+      local: localT,
+      buffered: bufT,
+      showSave: showSaveT,
+      status: buffering
+        ? `Buffering from ${srcT}`
+        : localT
+        ? tr.savedAt
+          ? 'Saved · plays offline'
+          : 'On device · offline'
+        : savingT
+        ? `${srcT} · saving ${Math.round(bufT * 100)}%`
+        : `${srcT} · streaming only`,
+      ring: localT
+        ? deep
+          ? GREEN_LIGHT
+          : GREEN
+        : savingT
+        ? deep
+          ? '#FF9A76'
+          : ACCENT
+        : inkT,
+      // Two of Save offline / Random / sleep + speed don't fit next to the full text: keep just the ring.
+      compact: Number(showSaveT) + Number(st.radio) + Number(!!sleepLeft) >= 2,
+    };
+  };
+  const { local, buffered } = songInfo(track, false);
 
-  const showSave = track.status === 'streaming' && online;
-  // Two of Save offline / Random / sleep + speed don't fit next to the full text: keep just the ring.
-  const compactStatus =
-    Number(showSave) + Number(st.radio) + Number(!!sleepLeft) >= 2;
+  /** The title row (with Like) and the status row: they swipe with the song. */
+  const details = (tr: QueueItem, leavingSong: boolean) => {
+    const i = songInfo(tr, leavingSong);
+    return {
+      title: (
+        <>
+          <View style={styles.flex}>
+            <SongTitle track={tr} ink={i.ink} />
+          </View>
+          <RoundBtn
+            bg={chip}
+            size={44}
+            haptic="confirm"
+            onPress={() => PlayerService.toggleLike(live)}
+          >
+            <HeartIcon
+              size={22}
+              color={tr.liked ? (deep ? '#FF8A65' : ACCENT) : i.ink}
+              fill={tr.liked ? (deep ? '#FF8A65' : ACCENT) : 'none'}
+            />
+          </RoundBtn>
+        </>
+      ),
+      status: (
+        <>
+          <View
+            accessible
+            accessibilityLabel={i.status}
+            style={[
+              styles.statusChip,
+              i.compact && styles.statusChipCompact,
+              { backgroundColor: chip },
+            ]}
+          >
+            <RingIcon
+              color={i.ring}
+              track={deep ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}
+              progress={i.buffered}
+            />
+            {!i.compact && (
+              <Text style={[font(500, 12), { color: i.ink }]}>{i.status}</Text>
+            )}
+          </View>
+          {i.showSave && (
+            <Pressable
+              onPress={() => PlayerService.saveOffline(live)}
+              style={[styles.saveBtn, { backgroundColor: i.ink }]}
+            >
+              <Text style={[font(600, 12), { color: i.solid }]}>
+                Save offline
+              </Text>
+            </Pressable>
+          )}
+          {st.radio && (
+            <Pressable
+              onPress={() => PlayerService.stopRadio()}
+              accessibilityLabel="Random suggestions on. Tap to turn off"
+              style={[styles.radioChip, { backgroundColor: chip }]}
+            >
+              <SimilarIcon size={15} color={i.accentOn} />
+              <Text style={[font(600, 12), { color: i.ink }]}>Random</Text>
+              <CloseIcon size={8} color={i.ink} />
+            </Pressable>
+          )}
+          {!!sleepLeft && (
+            <Pressable
+              onPress={() => openSheet({ kind: 'sleep' })}
+              accessibilityLabel={`Sleep timer: ${sleepLeft}`}
+              style={[styles.speedBtn, { backgroundColor: chip }]}
+            >
+              <MoonIcon color={i.ink} />
+              <Text style={[mono(600, 12), { color: i.ink }]}>
+                {sleepLeft === 'End of song' ? 'End' : sleepLeft}
+              </Text>
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => openSheet({ kind: 'speed' })}
+            accessibilityLabel="Playback speed"
+            style={[styles.speedBtn, { backgroundColor: chip }]}
+          >
+            <SpeedIcon color={i.ink} />
+            <Text style={[mono(600, 12), { color: i.ink }]}>
+              {speedLabel(playbackSpeed)}
+            </Text>
+          </Pressable>
+        </>
+      ),
+    };
+  };
+  const shown = details(track, false);
+  const gone = lv && details(lv.track, true);
 
   const next =
     st.queue[st.index + 1] ?? (st.repeat === 'all' ? st.queue[0] : null);
@@ -149,34 +386,31 @@ export function PlayerScreen() {
     : 'End of queue';
 
   return (
-    <View
-      style={[
-        styles.fill,
-        {
-          backgroundColor: solid,
-          backgroundImage: deep
-            ? `radial-gradient(130% 80% at 50% 0%, ${P.deep2} 0%, ${P.deep} 65%)`
-            : `linear-gradient(180deg, ${P.soft2} 0%, ${P.soft} 55%, #F7F6F3 100%)`,
-        },
-      ]}
-    >
-      {!!art && (
-        <Image
-          source={{ uri: art }}
-          blurRadius={40}
-          style={[styles.blur, { opacity: deep ? 0.6 : 0.45 }]}
-        />
+    <View style={styles.fill}>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, dir ? inStyle : null]}
+      >
+        <Backdrop track={live} deep={deep} />
+      </Animated.View>
+      {!!lv && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            dir
+              ? outStyle
+              : {
+                  opacity: t.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 0],
+                  }),
+                },
+          ]}
+        >
+          <Backdrop track={lv.track} deep={deep} />
+        </Animated.View>
       )}
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            backgroundImage: deep
-              ? `linear-gradient(180deg, rgba(0,0,0,0.05) 0%, ${P.deep} 72%)`
-              : `linear-gradient(180deg, rgba(255,255,255,0.15) 0%, ${P.soft} 70%, #F7F6F3 100%)`,
-          },
-        ]}
-      />
 
       <View
         style={[
@@ -201,7 +435,7 @@ export function PlayerScreen() {
           </View>
           <RoundBtn
             bg={chip}
-            onPress={() => openSheet({ kind: 'menu', track })}
+            onPress={() => openSheet({ kind: 'menu', track: live })}
           >
             <MoreIcon color={ink} />
           </RoundBtn>
@@ -219,146 +453,64 @@ export function PlayerScreen() {
           // Hidden but still on top of the lyrics: let touches through to them.
           pointerEvents={showLyrics ? 'none' : 'auto'}
           style={[
-            showLyrics && styles.hidden,
             styles.artWrap,
             { width: artSize, height: artSize, transform: [{ scale }] },
+            showLyrics && styles.hidden,
           ]}
         >
-          <View
-            style={[
-              styles.glow,
-              vinyl && { borderRadius: artSize / 2 },
-              {
-                backgroundColor: P.glow,
-                boxShadow: `0px 12px 40px 10px ${P.glow}`,
-              },
-            ]}
-          />
-          {vinyl && (
-            <Vinyl
-              uri={art}
+          <Animated.View style={[StyleSheet.absoluteFill, inStyle]}>
+            <Cover
+              track={track}
               size={artSize}
+              vinyl={vinyl}
               vinylStyle={vinylStyle}
-              palette={P}
               spinning={rotateArt && st.isPlaying && !st.isBuffering}
-              style={styles.disc}
+              buffering={st.isBuffering}
             />
+          </Animated.View>
+          {!!lv && (
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, outStyle]}
+            >
+              <Cover
+                track={lv.track}
+                size={artSize}
+                vinyl={vinyl}
+                vinylStyle={vinylStyle}
+                spinning={false}
+                buffering={false}
+              />
+            </Animated.View>
           )}
-          <View
-            style={[
-              vinyl
-                ? [StyleSheet.absoluteFill, { borderRadius: artSize / 2 }]
-                : { backgroundColor: P.artBg },
-              styles.art,
-              vinyl && { borderRadius: artSize / 2 },
-            ]}
-            pointerEvents="none"
-          >
-            {!vinyl && !!art && (
-              <Image source={{ uri: art }} style={StyleSheet.absoluteFill} />
-            )}
-            {st.isBuffering && (
-              <View style={styles.buffering}>
-                <View style={styles.bufPill}>
-                  <Spinner color="#fff" track="rgba(255,255,255,0.3)" />
-                  <Text style={[font(500, 12), styles.white]}>Buffering</Text>
-                </View>
-              </View>
-            )}
-          </View>
         </Animated.View>
 
-        <View style={styles.titleRow}>
-          <View style={styles.flex}>
-            <Text
-              numberOfLines={1}
-              style={[font(700, 25, 1.15), { color: ink, letterSpacing: -0.5 }]}
+        <View style={styles.titleWrap}>
+          <Animated.View style={[styles.row, inStyle]}>
+            {shown.title}
+          </Animated.View>
+          {!!gone && (
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, styles.row, outStyle]}
             >
-              {track.title}
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={[font(400, 16), styles.artist, { color: ink }]}
-            >
-              {track.artist ?? 'Unknown artist'}
-            </Text>
-          </View>
-          <RoundBtn
-            bg={chip}
-            size={44}
-            haptic="confirm"
-            onPress={() => PlayerService.toggleLike(track)}
-          >
-            <HeartIcon
-              size={22}
-              color={track.liked ? (deep ? '#FF8A65' : ACCENT) : ink}
-              fill={track.liked ? (deep ? '#FF8A65' : ACCENT) : 'none'}
-            />
-          </RoundBtn>
+              {gone.title}
+            </Animated.View>
+          )}
         </View>
 
-        <View style={styles.statusRow}>
-          <View
-            accessible
-            accessibilityLabel={status}
-            style={[
-              styles.statusChip,
-              compactStatus && styles.statusChipCompact,
-              { backgroundColor: chip },
-            ]}
-          >
-            <RingIcon
-              color={ring}
-              track={deep ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}
-              progress={buffered}
-            />
-            {!compactStatus && (
-              <Text style={[font(500, 12), { color: ink }]}>{status}</Text>
-            )}
-          </View>
-          {showSave && (
-            <Pressable
-              onPress={() => PlayerService.saveOffline(track)}
-              style={[styles.saveBtn, { backgroundColor: ink }]}
+        <View style={styles.statusWrap}>
+          <Animated.View style={[styles.statusRow, inStyle]}>
+            {shown.status}
+          </Animated.View>
+          {!!gone && (
+            <Animated.View
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, styles.statusRow, outStyle]}
             >
-              <Text style={[font(600, 12), { color: solid }]}>
-                Save offline
-              </Text>
-            </Pressable>
+              {gone.status}
+            </Animated.View>
           )}
-          {st.radio && (
-            <Pressable
-              onPress={() => PlayerService.stopRadio()}
-              accessibilityLabel="Random suggestions on. Tap to turn off"
-              style={[styles.radioChip, { backgroundColor: chip }]}
-            >
-              <SimilarIcon size={15} color={accentOn} />
-              <Text style={[font(600, 12), { color: ink }]}>Random</Text>
-              <CloseIcon size={8} color={ink} />
-            </Pressable>
-          )}
-          {!!sleepLeft && (
-            <Pressable
-              onPress={() => openSheet({ kind: 'sleep' })}
-              accessibilityLabel={`Sleep timer: ${sleepLeft}`}
-              style={[styles.speedBtn, { backgroundColor: chip }]}
-            >
-              <MoonIcon color={ink} />
-              <Text style={[mono(600, 12), { color: ink }]}>
-                {sleepLeft === 'End of song' ? 'End' : sleepLeft}
-              </Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => openSheet({ kind: 'speed' })}
-            accessibilityLabel="Playback speed"
-            style={[styles.speedBtn, { backgroundColor: chip }]}
-          >
-            <SpeedIcon color={ink} />
-            <Text style={[mono(600, 12), { color: ink }]}>
-              {speedLabel(playbackSpeed)}
-            </Text>
-          </Pressable>
         </View>
         {!!st.error && (
           <Text numberOfLines={2} style={[font(400, 12), styles.error]}>
@@ -367,14 +519,34 @@ export function PlayerScreen() {
         )}
 
         <View style={styles.bottom}>
-          <Waveform
-            track={track}
-            palette={P}
-            deep={deep}
-            buffered={buffered}
-            ink={ink}
-            local={local}
-          />
+          <View>
+            <Animated.View style={inStyle}>
+              <Waveform
+                track={track}
+                palette={P}
+                deep={deep}
+                buffered={buffered}
+                ink={ink}
+                local={local}
+              />
+            </Animated.View>
+            {!!lv && (
+              <Animated.View
+                pointerEvents="none"
+                style={[StyleSheet.absoluteFill, outStyle]}
+              >
+                <Waveform
+                  track={lv.track}
+                  frozen={lv.progress}
+                  palette={paletteFor(lv.track)}
+                  deep={deep}
+                  buffered={lv.track.status === 'ready' ? 1 : 0}
+                  ink={oldInk!}
+                  local={lv.track.status === 'ready'}
+                />
+              </Animated.View>
+            )}
+          </View>
 
           <View style={styles.controls}>
             <IconBtn size={48} onPress={() => PlayerService.toggleShuffle()}>
@@ -432,7 +604,7 @@ export function PlayerScreen() {
             </Pressable>
             {suggestSimilar && (
               <Pressable
-                onPress={() => openSheet({ kind: 'similar', track })}
+                onPress={() => openSheet({ kind: 'similar', track: live })}
                 style={[styles.similarBtn, { backgroundColor: chip }]}
               >
                 <SimilarIcon color={ink} />
@@ -449,12 +621,12 @@ export function PlayerScreen() {
             >
               <LyricsIcon color={showLyrics ? solid : ink} />
             </Pressable>
-            {(track.status !== 'streaming' || online) && (
+            {(live.status !== 'streaming' || online) && (
               <Pressable
                 onPress={() =>
-                  track.status === 'streaming'
-                    ? PlayerService.saveOffline(track)
-                    : openSheet({ kind: 'add', track })
+                  live.status === 'streaming'
+                    ? PlayerService.saveOffline(live)
+                    : openSheet({ kind: 'add', track: live })
                 }
                 style={[styles.addBtn, { backgroundColor: chip }]}
               >
@@ -468,12 +640,137 @@ export function PlayerScreen() {
   );
 }
 
+/** The big cover (or record) with its glow. */
+function Cover({
+  track,
+  size,
+  vinyl,
+  vinylStyle,
+  spinning,
+  buffering,
+}: {
+  track: QueueItem;
+  size: number;
+  vinyl: boolean;
+  vinylStyle: VinylStyle;
+  spinning: boolean;
+  buffering: boolean;
+}) {
+  const P = paletteFor(track);
+  const art = artworkUri(track);
+  return (
+    <>
+      <View
+        style={[
+          styles.glow,
+          vinyl && { borderRadius: size / 2 },
+          {
+            backgroundColor: P.glow,
+            boxShadow: `0px 12px 40px 10px ${P.glow}`,
+          },
+        ]}
+      />
+      {vinyl && (
+        <Vinyl
+          uri={art}
+          size={size}
+          vinylStyle={vinylStyle}
+          palette={P}
+          spinning={spinning}
+          style={styles.disc}
+        />
+      )}
+      <View
+        style={[
+          vinyl
+            ? [StyleSheet.absoluteFill, { borderRadius: size / 2 }]
+            : { backgroundColor: P.artBg },
+          styles.art,
+          vinyl && { borderRadius: size / 2 },
+        ]}
+        pointerEvents="none"
+      >
+        {!vinyl && !!art && (
+          <Image source={{ uri: art }} style={StyleSheet.absoluteFill} />
+        )}
+        {buffering && (
+          <View style={styles.buffering}>
+            <View style={styles.bufPill}>
+              <Spinner color="#fff" track="rgba(255,255,255,0.3)" />
+              <Text style={[font(500, 12), styles.white]}>Buffering</Text>
+            </View>
+          </View>
+        )}
+      </View>
+    </>
+  );
+}
+
+function SongTitle({ track, ink }: { track: QueueItem; ink: string }) {
+  return (
+    <>
+      <Text
+        numberOfLines={1}
+        style={[font(700, 25, 1.15), { color: ink, letterSpacing: -0.5 }]}
+      >
+        {track.title}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[font(400, 16), styles.artist, { color: ink }]}
+      >
+        {track.artist ?? 'Unknown artist'}
+      </Text>
+    </>
+  );
+}
+
+/** The player's background for a song: its colours and a blurred copy of its cover. */
+function Backdrop({ track, deep }: { track: QueueItem; deep: boolean }) {
+  const P = paletteFor(track);
+  const art = artworkUri(track);
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        styles.clip,
+        {
+          backgroundColor: deep ? P.deep : P.soft,
+          backgroundImage: deep
+            ? `radial-gradient(130% 80% at 50% 0%, ${P.deep2} 0%, ${P.deep} 65%)`
+            : `linear-gradient(180deg, ${P.soft2} 0%, ${P.soft} 55%, #F7F6F3 100%)`,
+        },
+      ]}
+    >
+      {!!art && (
+        <Image
+          source={{ uri: art }}
+          blurRadius={40}
+          style={[styles.blur, { opacity: deep ? 0.6 : 0.45 }]}
+        />
+      )}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            backgroundImage: deep
+              ? `linear-gradient(180deg, rgba(0,0,0,0.05) 0%, ${P.deep} 72%)`
+              : `linear-gradient(180deg, rgba(255,255,255,0.15) 0%, ${P.soft} 70%, #F7F6F3 100%)`,
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
 /**
  * The design's waveform seek bar: 56 bars; played / loaded / not-yet-loaded
  * shades. Tap or drag to seek.
  */
 function Waveform({
   track,
+  frozen,
   palette: P,
   deep,
   buffered,
@@ -481,6 +778,8 @@ function Waveform({
   local,
 }: {
   track: QueueItem;
+  /** The song before, leaving: shown where it stopped. */
+  frozen?: Progress;
   palette: Palette;
   deep: boolean;
   buffered: number;
@@ -514,7 +813,12 @@ function Waveform({
           }),
     [P.h, track.waveform],
   );
-  const played = drag ?? (duration > 0 ? position / duration : 0);
+  const played = frozen
+    ? frozen.duration > 0
+      ? frozen.position / frozen.duration
+      : 0
+    : drag ?? (duration > 0 ? position / duration : 0);
+  const total = frozen ? frozen.duration : duration || track.duration || 0;
   const cPlayed = deep ? '#fff' : P.softInk;
   const cBuf = deep ? 'rgba(255,255,255,0.42)' : P.inkA(0.35);
   const cEmpty = deep ? 'rgba(255,255,255,0.14)' : P.inkA(0.12);
@@ -561,11 +865,13 @@ function Waveform({
           style={[
             styles.wavePlayed,
             {
-              width: smooth.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, rowWidth],
-                extrapolate: 'clamp',
-              }),
+              width: frozen
+                ? played * rowWidth
+                : smooth.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, rowWidth],
+                    extrapolate: 'clamp',
+                  }),
             },
           ]}
         >
@@ -584,13 +890,13 @@ function Waveform({
       </View>
       <View style={styles.times}>
         <Text style={[mono(500, 12), styles.dim, { color: ink }]}>
-          {formatTime(played * duration)}
+          {formatTime(played * total)}
         </Text>
         <Text style={[mono(500, 12), styles.dim, { color: ink }]}>
           {local ? '' : loaded >= 100 ? 'fully loaded' : `${loaded}% loaded`}
         </Text>
         <Text style={[mono(500, 12), styles.dim, { color: ink }]}>
-          {formatTime(duration || track.duration)}
+          {formatTime(total)}
         </Text>
       </View>
     </View>
@@ -708,6 +1014,7 @@ const Dot = ({ color }: { color: string }) => (
 
 const styles = StyleSheet.create({
   fill: { flex: 1, overflow: 'hidden' },
+  clip: { overflow: 'hidden' },
   flex: { flex: 1, minWidth: 0 },
   white: { color: '#fff' },
   // Runs past the bottom of the screen: Android's blur keeps the image's edges
@@ -764,18 +1071,14 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 26,
-  },
+  titleWrap: { marginTop: 26 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   artist: { marginTop: 3, opacity: 0.75 },
+  statusWrap: { marginTop: 12 },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 12,
     minHeight: 30,
   },
   statusChip: {

@@ -37,6 +37,8 @@ import {
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+export type MoveDir = -1 | 0 | 1;
+
 /** Pause at a time (epoch ms), or when the current song ends. */
 export type SleepTimer = { at: number } | { endOfSong: true };
 
@@ -67,6 +69,8 @@ export interface PlayerState {
   /** Random suggestions: when the queue runs out, keep playing similar songs. */
   radio: boolean;
   sleep: SleepTimer | null;
+  /** Which way the last song change went: 1 next, -1 previous, 0 a new list (for the player's animation). */
+  moveDir: MoveDir;
   error: string | null;
 }
 
@@ -116,6 +120,7 @@ class PlayerServiceImpl {
     shuffle: false,
     radio: false,
     sleep: null,
+    moveDir: 0,
     error: null,
   };
   private progress: Progress = { position: 0, duration: 0 };
@@ -127,6 +132,10 @@ class PlayerServiceImpl {
   private preloaded: { item: QueueItem; player: VideoPlayer } | null = null;
   /** The load (loadToken) the next song was preloaded for, so it's done once per song. */
   private preloadedFor = -1;
+  /** The player is switching to another song's file (see load). */
+  private replacing = false;
+  /** Direction of the song change being loaded, copied into the state once it shows. */
+  private moveDir: MoveDir = 0;
   /** The load the next song was started early for (see maybeStartNextOnTime). */
   private startedNextFor = -1;
   /** The player of the song before, released once the new one has taken over (see swapTo). */
@@ -195,7 +204,7 @@ class PlayerServiceImpl {
       },
     );
     p.addEventListener('onProgress', ({ currentTime }) => {
-      if (!mine()) return;
+      if (!mine() || this.replacing) return;
       this.setProgress({
         position: currentTime,
         duration: this.progress.duration,
@@ -326,7 +335,13 @@ class PlayerServiceImpl {
       this.player = this.createPlayer(config);
       this.activate(this.player);
     } else {
-      await this.player.replaceSourceAsync(config);
+      // Ticks still coming from the song before would move the new one's position.
+      this.replacing = true;
+      try {
+        await this.player.replaceSourceAsync(config);
+      } finally {
+        this.replacing = false;
+      }
     }
     this.applyLoop();
     if (token !== this.loadToken) return;
@@ -337,7 +352,14 @@ class PlayerServiceImpl {
   private showLoaded(playable: QueueItem, index: number, buffering: boolean) {
     const queue = [...this.state.queue];
     queue[index] = playable;
-    this.setState({ queue, index, error: null, isBuffering: buffering });
+    this.setState({
+      queue,
+      index,
+      error: null,
+      isBuffering: buffering,
+      moveDir: this.moveDir,
+    });
+    this.moveDir = 0;
     this.setProgress({ position: 0, duration: playable.duration ?? 0 });
     this.counted = false;
     if (playable.status !== 'streaming') {
@@ -508,14 +530,17 @@ class PlayerServiceImpl {
   /**
    * Play a list starting at `startIndex`.
    * @param shuffle force shuffle on/off (the Play and Shuffle buttons); defaults to the current mode
+   * @param dir how the player animates to it (random suggestions move on like Next)
    */
   async playQueue(
     tracks: QueueItem[],
     startIndex = 0,
     contextName = 'Library',
     shuffle = this.state.shuffle,
+    dir: MoveDir = 0,
   ) {
     if (!tracks.length) return;
+    this.moveDir = dir;
     const start = tracks[startIndex] ?? tracks[0];
     const queue = shuffle
       ? [start, ...shuffled(tracks.filter(t => t.id !== start.id))]
@@ -568,10 +593,11 @@ class PlayerServiceImpl {
   async playOnline(
     result: OnlineResult,
     ctx = `Search · ${sourceName(result.source)}`,
+    dir: MoveDir = 0,
   ) {
     const id = trackIdFor(result.source, result.sourceId);
     const existing = await getTrack(id);
-    if (existing) return this.playQueue([existing], 0, ctx, false);
+    if (existing) return this.playQueue([existing], 0, ctx, false, dir);
 
     const token = ++this.loadToken;
     this.setState({ isResolving: true, error: null });
@@ -592,7 +618,7 @@ class PlayerServiceImpl {
         streamUrl: stream.url,
         streamHeaders: stream.headers,
       };
-      await this.playQueue([item], 0, ctx, false);
+      await this.playQueue([item], 0, ctx, false, dir);
     } catch (e: any) {
       this.setState({
         error: `Couldn't play "${result.title}": ${e?.message ?? e}`,
@@ -795,6 +821,7 @@ class PlayerServiceImpl {
       if (shuffle) this.setState({ queue: shuffled(queue) });
       n = 0;
     }
+    this.moveDir = 1;
     await this.load(n);
   }
 
@@ -804,10 +831,13 @@ class PlayerServiceImpl {
       this.seekTo(0);
       return;
     }
+    this.moveDir = -1;
     await this.load(this.state.index - 1);
   }
 
   async skipTo(index: number) {
+    this.moveDir =
+      index > this.state.index ? 1 : index < this.state.index ? -1 : 0;
     await this.load(index);
   }
 
@@ -953,15 +983,18 @@ class PlayerServiceImpl {
     toast('Random suggestions off');
   }
 
-  private async playRadioPick(pick: { track?: Track; result?: OnlineResult }) {
+  private async playRadioPick(
+    pick: { track?: Track; result?: OnlineResult },
+    dir: MoveDir = 0,
+  ) {
     const ctx = 'Random suggestions';
     if (pick.track) {
       this.radioPlayed.add(pick.track.id);
-      await this.playQueue([pick.track], 0, ctx, false);
+      await this.playQueue([pick.track], 0, ctx, false, dir);
     } else if (pick.result) {
       const r = pick.result;
       this.radioPlayed.add(trackIdFor(r.source, r.sourceId));
-      await this.playOnline(r, ctx);
+      await this.playOnline(r, ctx, dir);
     }
   }
 
@@ -995,7 +1028,10 @@ class PlayerServiceImpl {
         }
         return;
       }
-      await this.playRadioPick(pool[Math.floor(Math.random() * pool.length)]);
+      await this.playRadioPick(
+        pool[Math.floor(Math.random() * pool.length)],
+        1,
+      );
     });
   }
 
