@@ -9,6 +9,7 @@
 import { Platform } from 'react-native';
 import { VideoPlayer, type VideoConfig } from 'react-native-video';
 import {
+  addListening,
   countPlay,
   getAllTracks,
   getTrack,
@@ -24,6 +25,7 @@ import { similarFor } from '../services/similar';
 import { ensureWaveform } from '../services/waveform';
 import { estimateBytes, fitsInStorage } from '../services/storage';
 import { sourceFor, sourceName } from '../sources';
+import { tr } from '../i18n';
 import { toast } from '../state/ui';
 import {
   artworkUri,
@@ -112,7 +114,7 @@ class PlayerServiceImpl {
     context: [],
     queue: [],
     index: -1,
-    contextName: 'Library',
+    contextName: '',
     isPlaying: false,
     isBuffering: false,
     isResolving: false,
@@ -219,6 +221,7 @@ class PlayerServiceImpl {
         duration: this.progress.duration,
       });
       this.countIfListened();
+      this.noteListening();
       this.checkSleep();
       this.maybePreload();
       this.maybeStartNextOnTime(currentTime);
@@ -237,7 +240,7 @@ class PlayerServiceImpl {
     p.addEventListener('onError', e => {
       if (!mine()) return;
       this.setState({
-        error: e.message ?? 'Playback error',
+        error: e.message ?? tr('system.playbackError'),
         isBuffering: false,
       });
     });
@@ -280,7 +283,7 @@ class PlayerServiceImpl {
   private async streamFor(track: Track): Promise<ResolvedStream> {
     const cached = this.streams.get(track.id);
     if (cached) return cached;
-    if (track.source === 'device') throw new Error('Not an online track');
+    if (track.source === 'device') throw new Error(tr('system.notOnline'));
     const stream = await sourceFor(track.source).resolveStream({
       source: track.source,
       sourceId: track.sourceId,
@@ -334,7 +337,9 @@ class PlayerServiceImpl {
       playable = await this.playableFor(item);
     } catch (e: any) {
       if (token === this.loadToken) {
-        this.setState({ error: `Couldn't play: ${e?.message ?? e}` });
+        this.setState({
+          error: tr('system.couldntPlay', { error: String(e?.message ?? e) }),
+        });
       }
       return;
     }
@@ -361,6 +366,7 @@ class PlayerServiceImpl {
 
   /** The queue, progress and library bookkeeping for the song now loaded. */
   private showLoaded(playable: QueueItem, index: number, buffering: boolean) {
+    this.saveListening();
     const queue = [...this.state.queue];
     queue[index] = playable;
     this.setState({
@@ -619,7 +625,7 @@ class PlayerServiceImpl {
   async playQueue(
     tracks: QueueItem[],
     startIndex = 0,
-    contextName = 'Library',
+    contextName = tr('system.ctxLibrary'),
     shuffle = this.state.shuffle,
     dir: MoveDir = 0,
   ) {
@@ -660,7 +666,7 @@ class PlayerServiceImpl {
   ): Promise<boolean> {
     const size = estimateBytes(track.duration, stream.bitrate);
     if (!(await fitsInStorage(size))) {
-      toast('Not enough space — raise the limit in Settings');
+      toast(tr('system.notEnoughSpace'));
       return false;
     }
     const saving: Track = { ...track, status: 'downloading' };
@@ -676,7 +682,7 @@ class PlayerServiceImpl {
    */
   async playOnline(
     result: OnlineResult,
-    ctx = `Search · ${sourceName(result.source)}`,
+    ctx = tr('system.ctxSearch', { source: sourceName(result.source) }),
     dir: MoveDir = 0,
   ) {
     const id = trackIdFor(result.source, result.sourceId);
@@ -705,7 +711,10 @@ class PlayerServiceImpl {
       await this.playQueue([item], 0, ctx, false, dir);
     } catch (e: any) {
       this.setState({
-        error: `Couldn't play "${result.title}": ${e?.message ?? e}`,
+        error: tr('system.couldntPlayTitle', {
+          title: result.title,
+          error: String(e?.message ?? e),
+        }),
       });
     } finally {
       this.setState({ isResolving: false });
@@ -723,9 +732,14 @@ class PlayerServiceImpl {
         stream,
         source.preferCoverLookup,
       );
-      if (ok) toast(`Downloading “${result.title}” — no streaming`);
+      if (ok) toast(tr('system.downloadingOnly', { title: result.title }));
     } catch (e: any) {
-      toast(`Couldn't download “${result.title}”: ${e?.message ?? e}`);
+      toast(
+        tr('system.couldntDownload', {
+          title: result.title,
+          error: String(e?.message ?? e),
+        }),
+      );
     }
   }
 
@@ -741,14 +755,19 @@ class PlayerServiceImpl {
       );
       if (ok) this.patchItem(item.id, { status: 'downloading' });
     } catch (e: any) {
-      toast(`Couldn't save “${item.title}”: ${e?.message ?? e}`);
+      toast(
+        tr('system.couldntSave', {
+          title: item.title,
+          error: String(e?.message ?? e),
+        }),
+      );
     }
   }
 
   /** Insert a song right after the current one. */
   playNext(item: QueueItem) {
     if (!this.current) {
-      this.playQueue([item], 0, 'Library', false);
+      this.playQueue([item], 0, tr('system.ctxLibrary'), false);
       return;
     }
     const without = (l: QueueItem[]) => l.filter(t => t.id !== item.id);
@@ -762,12 +781,63 @@ class PlayerServiceImpl {
         ? this.state.context
         : [...this.state.context, item],
     });
-    toast('Plays next');
+    toast(tr('system.playsNext'));
+  }
+
+  /** Adds a song at the end of the queue (moves it there if it's already coming up). */
+  addToQueue(item: QueueItem) {
+    const cur = this.current;
+    if (!cur) {
+      this.playQueue([item], 0, tr('system.ctxLibrary'), false);
+      return;
+    }
+    if (item.id === cur.id) {
+      toast(tr('system.alreadyPlaying'));
+      return;
+    }
+    const queue = this.state.queue.filter(t => t.id !== item.id);
+    queue.push(item);
+    this.setState({
+      queue,
+      index: queue.findIndex(t => t.id === cur.id),
+      context: this.state.context.some(t => t.id === item.id)
+        ? this.state.context
+        : [...this.state.context, item],
+    });
+    toast(tr('system.addedToQueue'));
+  }
+
+  /** Moves a song in the queue (the Queue sheet's drag handles). */
+  moveInQueue(from: number, to: number) {
+    const { queue, index, shuffle } = this.state;
+    if (from === to || !queue[from] || !queue[to]) return;
+    const cur = queue[index];
+    const next = [...queue];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    this.setState({
+      queue: next,
+      index: cur ? next.findIndex(t => t.id === cur.id) : index,
+      // In order: the list's order is the queue's (so turning shuffle on and off keeps it).
+      ...(shuffle ? {} : { context: next }),
+    });
+  }
+
+  /** Takes a song out of the queue only (it stays in the library). */
+  removeFromQueueOnly(id: string) {
+    const { queue, index } = this.state;
+    const i = queue.findIndex(t => t.id === id);
+    if (i < 0 || i === index) return;
+    this.setState({
+      queue: queue.filter(t => t.id !== id),
+      context: this.state.context.filter(t => t.id !== id),
+      index: i < index ? index - 1 : index,
+    });
   }
 
   async toggleLike(item: QueueItem) {
     if (item.status === 'streaming') {
-      toast('Save the song first to like it');
+      toast(tr('system.saveToLike'));
       return;
     }
     const liked = !item.liked;
@@ -869,6 +939,7 @@ class PlayerServiceImpl {
   }
   pause() {
     this.wantsToPlay = false;
+    this.saveListening();
     this.finishCrossfade();
     try {
       this.player?.pause();
@@ -920,6 +991,16 @@ class PlayerServiceImpl {
     await this.load(this.state.index - 1);
   }
 
+  /** The song before this one, even well into the song (swiping the cover). */
+  async previousSong() {
+    if (this.state.index <= 0) {
+      this.seekTo(0);
+      return;
+    }
+    this.moveDir = -1;
+    await this.load(this.state.index - 1);
+  }
+
   async skipTo(index: number) {
     this.moveDir =
       index > this.state.index ? 1 : index < this.state.index ? -1 : 0;
@@ -935,9 +1016,12 @@ class PlayerServiceImpl {
     const repeat = next[this.state.repeat];
     this.setState({ repeat });
     this.applyLoop();
-    toast(
-      { off: 'Repeat off', all: 'Repeat all', one: 'Repeat this song' }[repeat],
-    );
+    const label = {
+      off: 'system.repeatOff',
+      all: 'system.repeatAll',
+      one: 'system.repeatOne',
+    } as const;
+    toast(tr(label[repeat]));
   }
 
   /** Repeat one is done by the native player itself, so it works with the screen off. */
@@ -957,7 +1041,38 @@ class PlayerServiceImpl {
     if (position >= Math.min(30, duration > 0 ? duration / 2 : 30)) {
       this.counted = true;
       countPlay(cur.id).catch(() => {});
+      addListening(cur, 0, 1).catch(() => {});
     }
+  }
+
+  // ---------- listening time (stats) ----------
+
+  /** Real seconds listened to `listening`, not saved yet. */
+  private listened = 0;
+  private listening: QueueItem | null = null;
+  private lastTickAt = 0;
+
+  /** Adds the time since the last progress tick while playing. */
+  private noteListening() {
+    const now = Date.now();
+    const cur = this.current;
+    const last = this.lastTickAt;
+    this.lastTickAt = now;
+    if (!cur || !this.state.isPlaying || !last) return;
+    if (this.listening?.id !== cur.id) {
+      this.saveListening();
+      this.listening = cur;
+    }
+    this.listened += Math.min(now - last, 1500) / 1000;
+    if (this.listened >= 20) this.saveListening();
+  }
+
+  private saveListening() {
+    const song = this.listening;
+    const seconds = this.listened;
+    this.listened = 0;
+    this.lastTickAt = 0;
+    if (song && seconds >= 1) addListening(song, seconds, 0).catch(() => {});
   }
 
   // ---------- sleep timer ----------
@@ -980,8 +1095,8 @@ class PlayerServiceImpl {
     }
     toast(
       when === 'endOfSong'
-        ? 'Music pauses when this song ends'
-        : `Music pauses in ${when} min`,
+        ? tr('system.sleepEndOfSong')
+        : tr('system.sleepIn', { count: when }),
     );
   }
 
@@ -991,7 +1106,7 @@ class PlayerServiceImpl {
     this.setVolume(1);
     this.setState({ sleep: null });
     this.applyLoop();
-    if (!silent) toast('Sleep timer off');
+    if (!silent) toast(tr('system.sleepOff'));
   }
 
   private clearSleepTimeout() {
@@ -1017,7 +1132,7 @@ class PlayerServiceImpl {
       const playing = this.state.isPlaying || this.wantsToPlay;
       if (playing) this.pause();
       this.cancelSleep(true); // after pausing: it turns the volume back up
-      if (playing) toast('Sleep timer: music paused');
+      if (playing) toast(tr('system.sleepPaused'));
       return;
     }
     if (left < SLEEP_FADE_S && !this.fading) this.setVolume(this.sleepLevel());
@@ -1052,7 +1167,7 @@ class PlayerServiceImpl {
         index: queue.findIndex(t => t.id === cur.id),
       });
     }
-    toast(shuffle ? 'Shuffle on' : 'Shuffle off');
+    toast(tr(shuffle ? 'system.shuffleOn' : 'system.shuffleOff'));
   }
 
   // ---------- random suggestions ----------
@@ -1065,21 +1180,21 @@ class PlayerServiceImpl {
   async startRadio(first: { track?: Track; result?: OnlineResult }) {
     this.radioPlayed.clear();
     this.setState({ radio: true });
-    toast('Random suggestions on — tap the icon to stop');
+    toast(tr('system.radioOn'));
     await this.playRadioPick(first);
   }
 
   stopRadio() {
     if (!this.state.radio) return;
     this.setState({ radio: false });
-    toast('Random suggestions off');
+    toast(tr('system.radioOff'));
   }
 
   private async playRadioPick(
     pick: { track?: Track; result?: OnlineResult },
     dir: MoveDir = 0,
   ) {
-    const ctx = 'Random suggestions';
+    const ctx = tr('system.ctxRandom');
     if (pick.track) {
       this.radioPlayed.add(pick.track.id);
       await this.playQueue([pick.track], 0, ctx, false, dir);
@@ -1115,7 +1230,7 @@ class PlayerServiceImpl {
       if (!pool.length || !this.state.radio) {
         if (!pool.length) {
           this.setState({ radio: false });
-          toast('No more suggestions — random suggestions off');
+          toast(tr('system.radioEnded'));
           this.pause();
         }
         return;
@@ -1136,6 +1251,7 @@ class PlayerServiceImpl {
     this.wantsToPlay = false;
     this.loadToken++; // ignore any stream still being resolved
     this.cancelSleep(true);
+    this.saveListening();
     this.finishCrossfade();
     this.dropPreloaded();
     this.releaseRetiring();

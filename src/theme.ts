@@ -4,6 +4,7 @@
  * (oklch values from the design are converted to hex/hsl — React Native has no oklch.)
  */
 import type { TextStyle } from 'react-native';
+import { tr } from './i18n';
 import { useSettings } from './services/settings';
 
 export interface ThemeTokens {
@@ -201,7 +202,10 @@ export const formatTime = (s: number | null | undefined) => {
 };
 
 export const sourceLabel: Record<string, string> = {
-  device: 'Device',
+  // A getter, so it's read in the current language.
+  get device() {
+    return tr('common.device');
+  },
   youtube: 'YouTube',
   jamendo: 'Jamendo',
 };

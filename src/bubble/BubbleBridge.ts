@@ -14,6 +14,7 @@ import {
   NativeModules,
   Platform,
 } from 'react-native';
+import { onLanguageChange, tr } from '../i18n';
 import { navigationRef } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
 import { getLibrarySnapshot, subscribeLibrarySnapshot } from '../player/hooks';
@@ -144,7 +145,7 @@ function pushLists() {
     ) {
       if (local[i]) {
         suggestions.push({ kind: 'local', t: local[i] });
-        items.push(itemFor(local[i], 'Offline'));
+        items.push(itemFor(local[i], tr('system.offline')));
       }
       if (online[i] && items.length < MAX_SUGGESTIONS) {
         const r = online[i];
@@ -163,6 +164,17 @@ function pushLists() {
   const json = JSON.stringify({
     favorites: favorites.map(t => itemFor(t)),
     suggestions: items,
+    // The card's own texts, in the app's language.
+    labels: {
+      open: tr('system.bubbleOpen'),
+      playPause: tr('system.bubblePlayPause'),
+      previous: tr('common.previous'),
+      next: tr('common.next'),
+      favorites: tr('system.bubbleFavorites'),
+      suggested: tr('system.ctxSuggested'),
+      empty: tr('system.bubbleEmpty'),
+      bubble: tr('system.bubbleHint'),
+    },
   });
   if (json === lastLists) return;
   lastLists = json;
@@ -244,11 +256,18 @@ function onEvent(e: BubbleEvent): unknown {
       return;
     case 'favorite':
       if (!favorites[e.index]) return;
-      return PlayerService.playQueue(favorites, e.index, 'Liked songs', false);
+      return PlayerService.playQueue(
+        favorites,
+        e.index,
+        tr('system.ctxLiked'),
+        false,
+      );
     case 'suggestion': {
       const s = suggestions[e.index];
       const cur = PlayerService.current;
-      const name = cur ? `Similar to ${cur.title}` : 'Suggested';
+      const name = cur
+        ? tr('system.ctxSimilarTo', { title: cur.title })
+        : tr('system.ctxSuggested');
       if (s?.kind === 'local') {
         return PlayerService.playQueue([s.t], 0, name, false);
       }
@@ -293,6 +312,8 @@ export function startBubbleBridge() {
     pushLists();
     loadSuggestions();
   });
+  // The card's texts and the "Offline" tags are sent as text: resend them.
+  onLanguageChange(pushLists);
   AppState.addEventListener('change', async state => {
     if (state !== 'active') return;
     if (awaitingPermission) {

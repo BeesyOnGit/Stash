@@ -12,6 +12,7 @@
  */
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import { searchLibrary } from '../db/database';
+import { onLanguageChange, tr } from '../i18n';
 import { PlayerService } from '../player/PlayerService';
 import { getLibrarySnapshot, subscribeLibrarySnapshot } from '../player/hooks';
 import { whileAway } from '../services/keepAlive';
@@ -47,6 +48,10 @@ interface CarNative {
     shuffle: boolean;
     liked: boolean;
     canLike: boolean;
+    /** Button labels, in the app's language. */
+    likeLabel: string;
+    speedLabel: string;
+    shuffleLabel: string;
   }): void;
   setBrowseTree(json: string): void;
 }
@@ -108,13 +113,15 @@ function seedTrack(tracks: Track[]): Track | undefined {
 function listFor(parent: string): { name: string; tracks: Track[] } {
   const { tracks: all, playlists, byId } = getLibrarySnapshot();
   const tracks = all.filter(t => t.status !== 'streaming');
-  if (parent === 'library') return { name: 'Library', tracks };
+  if (parent === 'library') return { name: tr('system.ctxLibrary'), tracks };
   if (parent === 'liked')
-    return { name: 'Liked songs', tracks: tracks.filter(t => t.liked) };
+    return { name: tr('system.ctxLiked'), tracks: tracks.filter(t => t.liked) };
   if (parent === 'foryou') {
     const seed = seedTrack(tracks);
     return {
-      name: seed ? `Similar to ${seed.title}` : 'For you',
+      name: seed
+        ? tr('system.ctxSimilarTo', { title: seed.title })
+        : tr('system.ctxForYou'),
       tracks:
         forYou && forYou.seedId === seed?.id
           ? forYou.found.local
@@ -133,27 +140,27 @@ function listFor(parent: string): { name: string; tracks: Track[] } {
   if (parent.startsWith('pl:')) {
     const p = playlists.find(x => x.id === parent.slice(3));
     return {
-      name: p?.name ?? 'Playlist',
+      name: p?.name ?? tr('system.ctxPlaylist'),
       tracks: (p?.trackIds ?? [])
         .map(id => byId.get(id))
         .filter((t): t is Track => !!t),
     };
   }
-  return { name: 'Library', tracks: [] };
+  return { name: tr('system.ctxLibrary'), tracks: [] };
 }
 
 function buildTree() {
   const { tracks: all, playlists } = getLibrarySnapshot();
   const tracks = all.filter(t => t.status !== 'streaming');
   const suggest = getSettings().suggestSimilar;
-  const count = (n: number) => `${n} song${n === 1 ? '' : 's'}`;
+  const count = (n: number) => tr('common.songs', { count: n });
   const songs = (parent: string) =>
     listFor(parent)
       .tracks.slice(0, MAX_LIST)
       .map(t => songItem(parent, t));
   const shuffleItem = (parent: string): CarItem => ({
     id: `shuffle|${parent}`,
-    title: 'Shuffle all',
+    title: tr('system.carShuffleAll'),
     subtitle: count(listFor(parent).tracks.length),
   });
 
@@ -166,7 +173,7 @@ function buildTree() {
   const collections: CarItem[] = [
     folder(
       'liked',
-      'Liked songs',
+      tr('system.ctxLiked'),
       count(liked.length),
       liked[0] && artworkUri(liked[0]),
     ),
@@ -184,7 +191,7 @@ function buildTree() {
       return folder(
         `genre:${g}`,
         g,
-        `${count(list.length)} · Genre`,
+        tr('system.carGenre', { songs: count(list.length) }),
         list[0] && artworkUri(list[0]),
       );
     }),
@@ -208,11 +215,17 @@ function buildTree() {
     ];
   }
   const roots: CarItem[] = [
-    folder('library', 'Library', count(tracks.length)),
-    folder('playlists', 'Playlists', `${playlists.length + 1} playlists`),
+    folder('library', tr('system.ctxLibrary'), count(tracks.length)),
+    folder(
+      'playlists',
+      tr('system.carPlaylists'),
+      tr('system.carPlaylistCount', { count: playlists.length + 1 }),
+    ),
   ];
   if (suggest) {
-    roots.push(folder('foryou', 'For you', listFor('foryou').name));
+    roots.push(
+      folder('foryou', tr('system.ctxForYou'), listFor('foryou').name),
+    );
     // Web suggestions only while there's a connection to stream them.
     const web = (isOnline() ? forYou?.found.online ?? [] : []).map(
       (r, i): CarItem => ({
@@ -261,16 +274,22 @@ function pushPlayback() {
     );
   }
   const cur = st.queue[st.index];
+  const speed = getSettings().playbackSpeed;
   Native!.setPlayback({
     index: st.index - offset,
     playing: st.isPlaying || st.isResolving,
     buffering: st.isBuffering || st.isResolving,
     position,
-    speed: getSettings().playbackSpeed,
+    speed,
     repeat: st.repeat,
     shuffle: st.shuffle,
     liked: !!cur?.liked,
     canLike: !!cur && cur.status !== 'streaming',
+    likeLabel: tr(cur?.liked ? 'system.carUnlike' : 'system.carLike'),
+    speedLabel: tr('system.carSpeed', { speed: String(speed) }),
+    shuffleLabel: tr(
+      st.shuffle ? 'system.carShuffleOff' : 'system.carShuffleOn',
+    ),
   });
   // "For you" follows the song that's playing.
   if (cur?.id !== lastSeedId) {
@@ -331,12 +350,13 @@ async function playSearch(query: string) {
   pickedAt = Date.now();
   const local = await searchLibrary(query);
   if (local.length) {
-    PlayerService.playQueue(local, 0, `“${query}”`, false);
+    PlayerService.playQueue(local, 0, tr('system.ctxQuery', { query }), false);
     return;
   }
   if (!isOnline()) return;
   const online = await searchOnline(query, () => {});
-  if (online[0]) PlayerService.playOnline(online[0], `“${query}”`);
+  if (online[0])
+    PlayerService.playOnline(online[0], tr('system.ctxQuery', { query }));
 }
 
 function onEvent(e: CarEvent) {
@@ -424,6 +444,11 @@ export function startCarBridge() {
     loadForYou();
   });
   subscribeSettings(() => {
+    pushTree();
+    pushPlayback();
+  });
+  // Folder names and button labels are sent as text: resend them in the new language.
+  onLanguageChange(() => {
     pushTree();
     pushPlayback();
   });

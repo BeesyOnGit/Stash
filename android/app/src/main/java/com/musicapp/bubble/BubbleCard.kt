@@ -84,7 +84,7 @@ class BubbleCard(
     )
     val open = FrameLayout(ctx).apply {
       background = oval(CHIP)
-      contentDescription = "Open stash"
+      contentDescription = BubbleState.label("open", "Open stash")
       setOnClickListener { BubbleState.buzz(it); onOpenApp() }
       addView(IconView(ctx, IconView.Kind.OPEN, INK), FrameLayout.LayoutParams(px(15f), px(15f), Gravity.CENTER))
     }
@@ -95,10 +95,10 @@ class BubbleCard(
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
     }
-    controls.addView(iconButton(IconView.Kind.PREV, "Previous") { BubbleState.emit("previous") })
+    controls.addView(iconButton(IconView.Kind.PREV, BubbleState.label("previous", "Previous")) { BubbleState.emit("previous") })
     val play = FrameLayout(ctx).apply {
       background = oval(INK)
-      contentDescription = "Play or pause"
+      contentDescription = BubbleState.label("playPause", "Play or pause")
       setOnClickListener { BubbleState.buzz(it); BubbleState.emit("toggle") }
       addView(playIcon, FrameLayout.LayoutParams(px(20f), px(20f), Gravity.CENTER))
     }
@@ -109,7 +109,7 @@ class BubbleCard(
         marginEnd = px(18f)
       },
     )
-    controls.addView(iconButton(IconView.Kind.NEXT, "Next") { BubbleState.emit("next") })
+    controls.addView(iconButton(IconView.Kind.NEXT, BubbleState.label("next", "Next")) { BubbleState.emit("next") })
     header.addView(
       controls,
       LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -191,7 +191,7 @@ class BubbleCard(
   private fun buildLists(favorites: List<BubbleItem>, suggestions: List<BubbleItem>) {
     lists.removeAllViews()
     if (favorites.isNotEmpty()) {
-      lists.addView(label("Favorites"), labelParams(12f))
+      lists.addView(label(BubbleState.label("favorites", "Favorites")), labelParams(12f))
       val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
       favorites.forEachIndexed { i, item ->
         val tile = cover(52f, 12f).apply {
@@ -209,14 +209,17 @@ class BubbleCard(
       lists.addView(strip, labelParams(8f))
     }
     if (suggestions.isNotEmpty()) {
-      lists.addView(label("Suggested"), labelParams(16f))
+      lists.addView(label(BubbleState.label("suggested", "Suggested")), labelParams(16f))
       suggestions.forEachIndexed { i, item -> lists.addView(suggestionRow(i, item), labelParams(if (i == 0) 6f else 0f)) }
     }
     if (favorites.isEmpty() && suggestions.isEmpty()) {
       lists.addView(
         text(13f, Font.REGULAR, INK).apply {
           alpha = 0.6f
-          text = "Like songs to keep them here, and turn on Suggest similar songs for ideas."
+          text = BubbleState.label(
+            "empty",
+            "Like songs to keep them here, and turn on Suggest similar songs for ideas.",
+          )
           maxLines = 3
         },
         labelParams(14f),

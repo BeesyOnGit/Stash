@@ -16,6 +16,7 @@ export type TabParamList = {
   Library: NavigatorScreenParams<LibraryStackParamList>;
   Search: undefined;
   Saving: undefined;
+  Stats: undefined;
   Settings: undefined;
 };
 

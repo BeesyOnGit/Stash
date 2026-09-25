@@ -1,0 +1,5 @@
+<resources>
+    <string name="update_channel_name">App-Updates</string>
+    <string name="update_channel_description">Wenn eine neue Version von stash verfügbar ist</string>
+    <string name="update_available_title">stash %1$s ist verfügbar</string>
+</resources>

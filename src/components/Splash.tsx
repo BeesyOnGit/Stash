@@ -5,6 +5,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { tr } from '../i18n';
 import { useLibrary } from '../player/hooks';
 import { font, useTheme } from '../theme';
 import { LogoMark } from '../ui/icons';
@@ -84,13 +85,12 @@ export function Splash() {
       >
         <Text style={[styles.name, { color: t.ink }]}>stash</Text>
         <Text style={[font(400, 16, 1.45), styles.tagline, { color: t.muted }]}>
-          Stream once, keep forever.{'\n'}Your library first, the open web
-          second.
+          {tr('settings.splashTagline')}
         </Text>
       </Animated.View>
       <View style={styles.footer}>
         <Text style={[font(400, 12, 1.5), styles.center, { color: t.muted2 }]}>
-          A play button resting on a shelf: what you hear is what you keep.
+          {tr('settings.splashFooter')}
         </Text>
       </View>
     </Animated.View>

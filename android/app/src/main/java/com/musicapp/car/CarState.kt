@@ -37,6 +37,10 @@ object CarState {
   var shuffle = false
   var liked = false
   var canLike = false
+  /** Button labels in the app's language, sent by JS (empty until then: English fallback). */
+  var likeLabel = ""
+  var speedLabel = ""
+  var shuffleLabel = ""
   private var positionMs = 0L
   private var positionAt = 0L
 

@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { tr } from '../i18n';
 import { navigationRef } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
 import {
@@ -45,14 +46,16 @@ export function MiniPlayer() {
   const status = error
     ? error
     : isResolving
-    ? 'Finding the stream…'
+    ? tr('player.findingStream')
     : !track
     ? ''
     : track.status === 'ready'
-    ? `${track.artist ?? 'Unknown artist'} · Offline`
+    ? tr('player.miniOffline', {
+        artist: track.artist ?? tr('common.unknownArtist'),
+      })
     : dl !== undefined
-    ? `Saving ${Math.round(dl * 100)}% · ${src}`
-    : `Streaming · ${src}`;
+    ? tr('player.miniSaving', { percent: Math.round(dl * 100), source: src })
+    : tr('player.miniStreaming', { source: src });
   const buffered = track?.status === 'ready' ? 1 : dl ?? 0;
   const played = duration > 0 ? position / duration : 0;
 
@@ -74,7 +77,7 @@ export function MiniPlayer() {
         />
         <View style={styles.info}>
           <Text numberOfLines={1} style={[font(600, 14, 1.25), { color: ink }]}>
-            {track?.title ?? 'Loading…'}
+            {track?.title ?? tr('player.loading')}
           </Text>
           <Text
             numberOfLines={1}
@@ -90,7 +93,7 @@ export function MiniPlayer() {
         {radio && (
           <Pressable
             hitSlop={8}
-            accessibilityLabel="Random suggestions on. Tap to turn off"
+            accessibilityLabel={tr('player.randomOnHint')}
             onPress={() => PlayerService.stopRadio()}
             style={styles.radio}
           >
@@ -123,7 +126,7 @@ export function MiniPlayer() {
         </Pressable>
         <Pressable
           hitSlop={8}
-          accessibilityLabel="Stop playing"
+          accessibilityLabel={tr('player.stopPlaying')}
           onPress={() => PlayerService.stop()}
           style={styles.close}
         >

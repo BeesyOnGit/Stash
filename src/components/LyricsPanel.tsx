@@ -8,6 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { tr } from '../i18n';
 import { PlayerService } from '../player/PlayerService';
 import { useProgress } from '../player/hooks';
 import {
@@ -80,7 +81,7 @@ export function LyricsPanel({
       <View style={styles.center}>
         <Spinner color={ink} track="rgba(255,255,255,0.25)" />
         <Text style={[font(500, 14), styles.dim, { color: ink }]}>
-          Looking for lyrics…
+          {tr('player.lyricsLooking')}
         </Text>
       </View>
     );
@@ -99,7 +100,9 @@ export function LyricsPanel({
   } else {
     body = (
       <View style={styles.center}>
-        <Text style={[font(600, 17), { color: ink }]}>No lyrics found</Text>
+        <Text style={[font(600, 17), { color: ink }]}>
+          {tr('player.lyricsNone')}
+        </Text>
         <Text
           style={[
             font(400, 13, 1.4),
@@ -109,15 +112,17 @@ export function LyricsPanel({
           ]}
         >
           {online
-            ? 'Search for them yourself — sometimes the song is listed under another name.'
-            : 'Lyrics are looked up online the first time, then saved on the phone.'}
+            ? tr('player.lyricsSearchHint')
+            : tr('player.lyricsOfflineHint')}
         </Text>
         {online && (
           <Pressable
             onPress={() => setSearching(true)}
             style={[styles.pill, { backgroundColor: chip }]}
           >
-            <Text style={[font(600, 13), { color: ink }]}>Search lyrics</Text>
+            <Text style={[font(600, 13), { color: ink }]}>
+              {tr('player.lyricsSearch')}
+            </Text>
           </Pressable>
         )}
       </View>
@@ -133,13 +138,17 @@ export function LyricsPanel({
             numberOfLines={1}
             style={[mono(500, 11), styles.flex, styles.faint, { color: ink }]}
           >
-            {lyrics.source ?? ''}
-            {lyrics.lines ? ' · synced' : ''}
+            {[
+              sourceName(lyrics.source),
+              lyrics.lines && tr('player.lyricsSynced'),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </Text>
           {online && (
             <Pressable hitSlop={8} onPress={() => setSearching(true)}>
               <Text style={[font(600, 12), styles.dim, { color: ink }]}>
-                Wrong lyrics?
+                {tr('player.lyricsWrong')}
               </Text>
             </Pressable>
           )}
@@ -147,6 +156,12 @@ export function LyricsPanel({
       )}
     </View>
   );
+}
+
+/** Where the lyrics came from, for the footer (a service's name stays as is). */
+function sourceName(source: string | null) {
+  // services/lyrics saves a song's own .lrc file as "LRC file".
+  return source === 'LRC file' ? tr('player.lyricsLrcFile') : source;
 }
 
 // ---- timed lyrics ----
@@ -296,7 +311,7 @@ function LyricsSearch({
           onChangeText={setQuery}
           onSubmitEditing={() => run(query)}
           returnKeyType="search"
-          placeholder="Artist and title"
+          placeholder={tr('player.lyricsPlaceholder')}
           placeholderTextColor="rgba(255,255,255,0.45)"
           autoCorrect={false}
           style={[
@@ -306,7 +321,9 @@ function LyricsSearch({
           ]}
         />
         <Pressable hitSlop={8} onPress={onCancel}>
-          <Text style={[font(600, 13), { color: ink }]}>Cancel</Text>
+          <Text style={[font(600, 13), { color: ink }]}>
+            {tr('common.cancel')}
+          </Text>
         </Pressable>
       </View>
       {busy ? (
@@ -323,7 +340,7 @@ function LyricsSearch({
             <Text
               style={[font(400, 14), styles.dim, styles.empty, { color: ink }]}
             >
-              Nothing found. Try fewer words, or the original title.
+              {tr('player.lyricsNothingFound')}
             </Text>
           )}
           {results?.map(r => (
@@ -344,7 +361,7 @@ function LyricsSearch({
                 </Text>
               </View>
               <Text style={[mono(500, 11), styles.dim, { color: ink }]}>
-                {r.synced ? 'synced · ' : ''}
+                {r.synced ? `${tr('player.lyricsSynced')} · ` : ''}
                 {formatTime(r.duration)}
               </Text>
             </Pressable>
@@ -354,7 +371,7 @@ function LyricsSearch({
             style={styles.result}
           >
             <Text style={[font(500, 13), styles.dim, { color: ink }]}>
-              This song has no lyrics (instrumental)
+              {tr('player.lyricsInstrumental')}
             </Text>
           </Pressable>
         </ScrollView>

@@ -182,6 +182,13 @@ export const AddToListIcon = ({ size = 20, color }: P) => (
 );
 
 /** Speedometer (playback speed chip). */
+/** Drag handle: three short lines. */
+export const GripIcon = ({ size = 18, color }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2.2)}>
+    <Path d="M6 8h12M6 12h12M6 16h12" />
+  </Svg>
+);
+
 export const MoonIcon = ({ size = 14, color }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2.2)}>
     <Path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" />
@@ -251,6 +258,12 @@ export const LogoMark = ({
 export const LibraryTabIcon = ({ size = 24, color }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2)}>
     <Path d="M5 4v16M10 4v16M15 4.5l5 15" />
+  </Svg>
+);
+
+export const StatsTabIcon = ({ size = 24, color }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2)}>
+    <Path d="M5 20V12M10 20V5M15 20v-9M20 20V8" />
   </Svg>
 );
 

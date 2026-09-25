@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrackRow } from '../components/TrackRow';
 import { searchLibrary } from '../db/database';
+import { tr } from '../i18n';
 import { openCollection } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
 import { useDownloads, useLibrary } from '../player/hooks';
@@ -133,7 +134,9 @@ export function SearchScreen() {
       style={[styles.screen, { backgroundColor: t.bg, paddingTop: insets.top }]}
     >
       <View style={styles.head}>
-        <Text style={[styles.h1, { color: t.ink }]}>Search</Text>
+        <Text style={[styles.h1, { color: t.ink }]}>
+          {tr('library.searchTitle')}
+        </Text>
         <View
           style={[styles.box, { backgroundColor: t.card, borderColor: t.line }]}
         >
@@ -141,7 +144,7 @@ export function SearchScreen() {
           <TextInput
             value={query}
             onChangeText={onQuery}
-            placeholder="Songs, artists, anything"
+            placeholder={tr('library.searchPlaceholder')}
             placeholderTextColor={t.muted2}
             returnKeyType="search"
             autoCorrect={false}
@@ -151,6 +154,7 @@ export function SearchScreen() {
           {hasQuery && (
             <Pressable
               onPress={clear}
+              accessibilityLabel={tr('library.clearSearch')}
               style={[styles.clear, { backgroundColor: t.fill3 }]}
             >
               <CloseIcon color="#fff" />
@@ -166,7 +170,7 @@ export function SearchScreen() {
         {!hasQuery && (
           <View style={styles.idle}>
             <Text style={[font(600, 16), styles.label, { color: t.ink }]}>
-              Try
+              {tr('library.try')}
             </Text>
             <View style={styles.wrap}>
               {suggestions.map(s => (
@@ -192,7 +196,7 @@ export function SearchScreen() {
                     { color: t.ink },
                   ]}
                 >
-                  Browse by genre
+                  {tr('library.browseGenre')}
                 </Text>
                 <View style={styles.wrap}>
                   {genres.map(g => {
@@ -221,23 +225,23 @@ export function SearchScreen() {
               ]}
             >
               <Text style={[eyebrow(), styles.howTitle, { color: t.muted }]}>
-                How search works
+                {tr('library.howTitle')}
               </Text>
               <Step
                 n="1"
-                title="Your library first."
-                text="Saved songs play instantly, no connection needed."
+                title={tr('library.step1Title')}
+                text={tr('library.step1Text')}
               />
               <Step
                 n="2"
-                title="Then free sources."
-                text="YouTube Music and Jamendo."
+                title={tr('library.step2Title')}
+                text={tr('library.step2Text')}
               />
               <Step
                 n="3"
                 accent
-                title="Stream once, keep forever."
-                text="It saves while you listen the first time."
+                title={tr('library.step3Title')}
+                text={tr('library.step3Text')}
               />
             </View>
           </View>
@@ -248,7 +252,7 @@ export function SearchScreen() {
             <View style={styles.sectionHead}>
               <CheckCircleIcon size={15} color={GREEN} />
               <Text style={[font(600, 15), { color: t.ink }]}>
-                In your library
+                {tr('library.inLibrary')}
               </Text>
               <Text style={[mono(400, 13), { color: t.muted2 }]}>
                 {locals.length}
@@ -259,23 +263,27 @@ export function SearchScreen() {
                 key={x.id}
                 track={x}
                 showLiked={false}
-                subtitle={`${x.artist ?? 'Unknown artist'} · Offline`}
-                onPress={() => PlayerService.playQueue(locals, i, 'Search')}
+                subtitle={`${x.artist ?? tr('common.unknownArtist')} · ${tr(
+                  'library.offlineTag',
+                )}`}
+                onPress={() =>
+                  PlayerService.playQueue(locals, i, tr('library.searchTitle'))
+                }
                 onMenu={() => openSheet({ kind: 'menu', track: x })}
               />
             ))}
             {!locals.length && (
               <Note style={styles.mx20}>
                 {online
-                  ? 'Not on this device yet — looking online.'
-                  : 'Not on this device — you’re offline, so only your library is searched.'}
+                  ? tr('library.lookingOnline')
+                  : tr('library.notHereOffline')}
               </Note>
             )}
             {!online && locals.length > 0 && (
               <Text
                 style={[font(400, 12, 1.4), styles.srcNote, { color: t.muted }]}
               >
-                You’re offline — only your library is searched.
+                {tr('library.offlineOnlyLibrary')}
               </Text>
             )}
 
@@ -286,7 +294,7 @@ export function SearchScreen() {
               >
                 <GlobeIcon color={t.ink} />
                 <Text style={[font(500, 14), { color: t.ink }]}>
-                  Also search free sources
+                  {tr('library.alsoSearch')}
                 </Text>
               </Pressable>
             )}
@@ -301,7 +309,7 @@ export function SearchScreen() {
                 <View style={styles.scanHead}>
                   <Spinner color={ACCENT} track={t.accentSoft2} />
                   <Text style={[font(600, 14), { color: t.ink }]}>
-                    Searching free sources
+                    {tr('library.searchingSources')}
                   </Text>
                 </View>
                 {sources.map(s => (
@@ -315,7 +323,7 @@ export function SearchScreen() {
                 <View style={[styles.sectionHead, styles.mt22]}>
                   <GlobeIcon size={15} color={ACCENT} />
                   <Text style={[font(600, 15), { color: t.ink }]}>
-                    Found online
+                    {tr('library.foundOnline')}
                   </Text>
                   <Text style={[mono(400, 13), { color: t.muted2 }]}>
                     {results.length}
@@ -333,8 +341,11 @@ export function SearchScreen() {
                       ]}
                     >
                       {s.status === 'off'
-                        ? `${s.name} is off — set it up in Settings.`
-                        : `${s.name} didn't answer: ${s.error}`}
+                        ? tr('library.sourceOff', { name: s.name })
+                        : tr('library.sourceFailed', {
+                            name: s.name,
+                            error: s.error ?? '',
+                          })}
                     </Text>
                   ))}
                 {results.map(r => {
@@ -352,7 +363,7 @@ export function SearchScreen() {
                       artwork={r.thumbnailUrl}
                       showNew={false}
                       subtitle={[
-                        r.artist ?? 'Unknown artist',
+                        r.artist ?? tr('common.unknownArtist'),
                         sourceLabel[r.source],
                         r.duration ? formatTime(r.duration) : null,
                       ]
@@ -386,7 +397,7 @@ export function SearchScreen() {
                         ) : (
                           <View style={styles.actions}>
                             <Pressable
-                              accessibilityLabel="Download only"
+                              accessibilityLabel={tr('library.downloadOnly')}
                               hitSlop={4}
                               onPress={() => PlayerService.downloadOnly(r)}
                               style={[
@@ -407,7 +418,7 @@ export function SearchScreen() {
                             >
                               <PlayIcon size={12} color={t.onInk} />
                               <Text style={[font(500, 12), { color: t.onInk }]}>
-                                Play
+                                {tr('common.play')}
                               </Text>
                             </View>
                           </View>
@@ -424,8 +435,7 @@ export function SearchScreen() {
                       { color: t.muted },
                     ]}
                   >
-                    Tap to play — it saves as it streams. Or use ↓ to just
-                    download.
+                    {tr('library.footnote')}
                   </Text>
                 )}
               </>
@@ -469,12 +479,12 @@ function SourceLine({ s }: { s: SourceProgress }) {
   const t = useTheme();
   const label =
     s.status === 'done'
-      ? `${s.count} found`
+      ? tr('library.srcFound', { count: s.count ?? 0 })
       : s.status === 'searching'
-      ? 'searching…'
+      ? tr('library.srcSearching')
       : s.status === 'failed'
-      ? 'no answer'
-      : 'off';
+      ? tr('library.srcNoAnswer')
+      : tr('library.srcOff');
   const color =
     s.status === 'done'
       ? t.ink

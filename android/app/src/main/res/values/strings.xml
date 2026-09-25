@@ -1,3 +1,8 @@
 <resources>
-    <string name="app_name">stash</string>
+    <string name="app_name" translatable="false">stash</string>
+
+    <!-- Update notification (UpdaterModule.kt); these follow the phone's language. -->
+    <string name="update_channel_name">App updates</string>
+    <string name="update_channel_description">When a new version of stash is available</string>
+    <string name="update_available_title">stash %1$s is available</string>
 </resources>

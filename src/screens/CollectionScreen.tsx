@@ -1,9 +1,18 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useMemo } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Animated,
+  FlatList,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrackRow } from '../components/TrackRow';
-import { deletePlaylist } from '../db/database';
+import { deletePlaylist, setPlaylistOrder } from '../db/database';
+import { tr } from '../i18n';
 import type { LibraryStackParamList } from '../navigation/types';
 import { PlayerService } from '../player/PlayerService';
 import { useLibrary } from '../player/hooks';
@@ -11,9 +20,10 @@ import { smartListName, smartTracks } from '../services/smartLists';
 import { openSheet, toast } from '../state/ui';
 import { eyebrow, font, genreColors, paletteFor, useTheme } from '../theme';
 import { artworkUri, type Track } from '../types';
-import { ChevronLeftIcon, PlayIcon, ShuffleIcon } from '../ui/icons';
+import { ChevronLeftIcon, GripIcon, PlayIcon, ShuffleIcon } from '../ui/icons';
 import { CoverGrid, Note } from '../ui/primitives';
 import { Pressable } from '../ui/Pressable';
+import { useReorder } from '../ui/reorder';
 
 type Props = NativeStackScreenProps<LibraryStackParamList, 'Collection'>;
 
@@ -23,39 +33,64 @@ export function CollectionScreen({ route, navigation }: Props) {
   const { tracks, byId, playlists } = useLibrary();
   const p = route.params;
 
-  const { name, kind, list, playlistId } = useMemo(() => {
+  const {
+    name,
+    kind,
+    list: saved,
+    playlistId,
+  } = useMemo(() => {
     const ready = tracks.filter(x => x.status !== 'streaming');
     if (p.kind === 'liked') {
       return {
-        name: 'Liked songs',
-        kind: 'Playlist',
+        name: tr('library.likedSongs'),
+        kind: tr('library.kindPlaylist'),
         list: ready.filter(x => x.liked),
       };
     }
     if (p.kind === 'smart') {
       return {
         name: smartListName(p.list),
-        kind: 'Auto playlist',
+        kind: tr('library.kindAuto'),
         list: smartTracks(p.list, tracks),
       };
     }
     if (p.kind === 'genre') {
       return {
         name: p.genre,
-        kind: 'Genre',
+        kind: tr('library.kindGenre'),
         list: ready.filter(x => x.genre === p.genre),
       };
     }
     const pl = playlists.find(x => x.id === p.id);
     return {
-      name: pl?.name ?? 'Playlist',
-      kind: 'Playlist',
+      name: pl?.name ?? tr('library.kindPlaylist'),
+      kind: tr('library.kindPlaylist'),
       playlistId: pl?.id,
       list: (pl?.trackIds ?? [])
         .map(id => byId.get(id))
         .filter(Boolean) as Track[],
     };
   }, [p, tracks, byId, playlists]);
+
+  // A playlist's new order shows at once, before the library reloads with it.
+  const [order, setOrder] = useState<string[] | null>(null);
+  useEffect(() => setOrder(null), [saved]);
+  const list = useMemo(
+    () =>
+      order
+        ? (order
+            .map(id => saved.find(x => x.id === id))
+            .filter(Boolean) as Track[])
+        : saved,
+    [order, saved],
+  );
+  const reorder = useReorder(list.length, (from, to) => {
+    const ids = list.map(x => x.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    setOrder(ids);
+    if (playlistId) setPlaylistOrder(playlistId, ids).catch(() => {});
+  });
 
   // Header colour: the genre's colour, or the first song's palette.
   let bg = t.dark ? '#1C1C20' : '#EFEDE8';
@@ -72,15 +107,15 @@ export function CollectionScreen({ route, navigation }: Props) {
   const mins = Math.round(list.reduce((a, x) => a + (x.duration ?? 0), 0) / 60);
 
   const remove = () =>
-    Alert.alert(name, 'Delete this playlist? The songs stay in your library.', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(name, tr('library.deletePlaylistBody'), [
+      { text: tr('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: tr('common.delete'),
         style: 'destructive',
         onPress: async () => {
           await deletePlaylist(playlistId!);
           navigation.goBack();
-          toast('Playlist deleted');
+          toast(tr('library.playlistDeleted'));
         },
       },
     ]);
@@ -98,7 +133,9 @@ export function CollectionScreen({ route, navigation }: Props) {
           style={[styles.back, { backgroundColor: t.glass }]}
         >
           <ChevronLeftIcon color={t.ink} />
-          <Text style={[font(500, 14), { color: t.ink }]}>Library</Text>
+          <Text style={[font(500, 14), { color: t.ink }]}>
+            {tr('library.title')}
+          </Text>
         </Pressable>
         <View style={styles.heroRow}>
           <View style={styles.heroArt}>
@@ -116,7 +153,8 @@ export function CollectionScreen({ route, navigation }: Props) {
               {name}
             </Text>
             <Text style={[font(400, 13), styles.heroMeta, { color: ink }]}>
-              {list.length} songs · {mins} min
+              {tr('common.songs', { count: list.length })} ·{' '}
+              {tr('library.minutes', { count: mins })}
             </Text>
           </View>
         </View>
@@ -126,14 +164,18 @@ export function CollectionScreen({ route, navigation }: Props) {
             style={[styles.btn, { backgroundColor: t.ink }]}
           >
             <PlayIcon color={t.onInk} />
-            <Text style={[font(600, 14), { color: t.onInk }]}>Play</Text>
+            <Text style={[font(600, 14), { color: t.onInk }]}>
+              {tr('common.play')}
+            </Text>
           </Pressable>
           <Pressable
             onPress={() => list.length && PlayerService.shuffleAll(list, name)}
             style={[styles.btn, { backgroundColor: t.glass }]}
           >
             <ShuffleIcon color={t.ink} />
-            <Text style={[font(600, 14), { color: t.ink }]}>Shuffle</Text>
+            <Text style={[font(600, 14), { color: t.ink }]}>
+              {tr('common.shuffle')}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -141,13 +183,61 @@ export function CollectionScreen({ route, navigation }: Props) {
         <Note style={styles.empty}>
           {p.kind === 'smart'
             ? p.list === 'most'
-              ? 'Songs you listen to show up here.'
-              : 'Songs you save show up here.'
-            : 'No songs yet. Use the ••• menu on any song, or the add button in the player.'}
+              ? tr('library.emptyMost')
+              : tr('library.emptySaved')
+            : tr('library.emptyPlaylist')}
         </Note>
       )}
     </View>
   );
+
+  const footer = playlistId ? (
+    <Pressable onPress={remove} style={styles.delete}>
+      <Text style={[font(500, 14), { color: t.danger }]}>
+        {tr('library.deletePlaylist')}
+      </Text>
+    </Pressable>
+  ) : undefined;
+
+  // Playlists: plain rows with drag handles (the order is theirs to choose).
+  if (playlistId) {
+    return (
+      <View style={[styles.screen, { backgroundColor: t.bg }]}>
+        <ScrollView
+          scrollEnabled={!reorder.dragging}
+          contentContainerStyle={styles.pad}
+        >
+          {header}
+          {list.map((item, index) => (
+            <Animated.View
+              key={item.id}
+              onLayout={index === 0 ? reorder.measure : undefined}
+              style={[{ backgroundColor: t.bg }, reorder.rowStyle(index)]}
+            >
+              <TrackRow
+                track={item}
+                onPress={() => PlayerService.playQueue(list, index, name)}
+                onMenu={() =>
+                  openSheet({ kind: 'menu', track: item, playlistId })
+                }
+                trailing={
+                  <View
+                    {...reorder.handle(index)}
+                    hitSlop={8}
+                    accessibilityLabel={tr('library.dragToReorder')}
+                    style={styles.grip}
+                  >
+                    <GripIcon color={t.muted2} />
+                  </View>
+                }
+              />
+            </Animated.View>
+          ))}
+          {footer}
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.screen, { backgroundColor: t.bg }]}>
@@ -163,15 +253,7 @@ export function CollectionScreen({ route, navigation }: Props) {
             onMenu={() => openSheet({ kind: 'menu', track: item, playlistId })}
           />
         )}
-        ListFooterComponent={
-          playlistId ? (
-            <Pressable onPress={remove} style={styles.delete}>
-              <Text style={[font(500, 14), { color: t.danger }]}>
-                Delete playlist
-              </Text>
-            </Pressable>
-          ) : undefined
-        }
+        ListFooterComponent={footer}
       />
     </View>
   );
@@ -180,6 +262,13 @@ export function CollectionScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   pad: { paddingBottom: 16 },
+  grip: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -6,
+  },
   hero: { paddingHorizontal: 20, paddingBottom: 22 },
   back: {
     alignSelf: 'flex-start',

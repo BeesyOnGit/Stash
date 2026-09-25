@@ -1,4 +1,6 @@
 import { open, type Scalar } from '@op-engineering/op-sqlite';
+import { tr } from '../i18n';
+import { dayKey } from '../services/stats';
 import type { Playlist, Track, TrackSource, TrackStatus } from '../types';
 
 const db = open({ name: 'library.db' });
@@ -64,6 +66,21 @@ db.executeSync(`
     track_id TEXT NOT NULL,
     position INTEGER NOT NULL,
     PRIMARY KEY (playlist_id, track_id)
+  );
+`);
+
+// Listening time per song, day and hour (stats). The title and artist are kept
+// too, for songs that were only streamed and aren't in the library.
+db.executeSync(`
+  CREATE TABLE IF NOT EXISTS listens (
+    track_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    seconds REAL NOT NULL DEFAULT 0,
+    plays INTEGER NOT NULL DEFAULT 0,
+    title TEXT,
+    artist TEXT,
+    PRIMARY KEY (track_id, day, hour)
   );
 `);
 
@@ -372,6 +389,100 @@ export async function addTracksToPlaylist(
   }
   if (added) notify();
   return added;
+}
+
+/**
+ * Puts the playlist's songs in this order. Songs of the playlist that aren't
+ * in `trackIds` (no longer in the library) keep their place at the end.
+ */
+export async function setPlaylistOrder(
+  playlistId: string,
+  trackIds: string[],
+): Promise<void> {
+  const res = await db.execute(
+    'SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position',
+    [playlistId],
+  );
+  const all = res.rows.map(r => r.track_id as string);
+  const order = [
+    ...trackIds.filter(id => all.includes(id)),
+    ...all.filter(id => !trackIds.includes(id)),
+  ];
+  for (const [i, id] of order.entries()) {
+    await db.execute(
+      'UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND track_id = ?',
+      [i, playlistId, id],
+    );
+  }
+  notify();
+}
+
+// ---- listening stats ----
+
+/** Adds listening time (and plays) to the song's row for this hour. */
+export async function addListening(
+  track: { id: string; title: string; artist: string | null },
+  seconds: number,
+  plays: number,
+): Promise<void> {
+  const now = new Date();
+  await db.execute(
+    `INSERT INTO listens (track_id, day, hour, seconds, plays, title, artist)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(track_id, day, hour) DO UPDATE SET
+       seconds = seconds + excluded.seconds, plays = plays + excluded.plays,
+       title = excluded.title, artist = excluded.artist`,
+    [
+      track.id,
+      dayKey(now),
+      now.getHours(),
+      seconds,
+      plays,
+      track.title,
+      track.artist,
+    ],
+  );
+}
+
+export interface ListenRow {
+  trackId: string;
+  day: string;
+  hour: number;
+  seconds: number;
+  plays: number;
+  title: string;
+  artist: string | null;
+  genre: string | null;
+}
+
+/** Listening rows since a day (inclusive), with the library's current names. */
+export async function getListens(since: string | null): Promise<ListenRow[]> {
+  const res = await db.execute(
+    `SELECT l.track_id, l.day, l.hour, l.seconds, l.plays,
+            COALESCE(t.title, l.title) AS title, COALESCE(t.artist, l.artist) AS artist,
+            t.genre AS genre
+     FROM listens l LEFT JOIN tracks t ON t.id = l.track_id
+     WHERE ? IS NULL OR l.day >= ?`,
+    [since, since],
+  );
+  return res.rows.map(r => ({
+    trackId: r.track_id as string,
+    day: r.day as string,
+    hour: Number(r.hour),
+    seconds: Number(r.seconds),
+    plays: Number(r.plays),
+    title: (r.title as string) ?? tr('system.unknownSong'),
+    artist: (r.artist as string) ?? null,
+    genre: (r.genre as string) ?? null,
+  }));
+}
+
+/** Every day with some listening, oldest first (for streaks). */
+export async function getListenDays(): Promise<string[]> {
+  const res = await db.execute(
+    'SELECT day FROM listens GROUP BY day HAVING SUM(seconds) > 0 ORDER BY day',
+  );
+  return res.rows.map(r => r.day as string);
 }
 
 // ---- settings ----

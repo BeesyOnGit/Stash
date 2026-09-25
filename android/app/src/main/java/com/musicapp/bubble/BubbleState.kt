@@ -50,6 +50,12 @@ object BubbleState {
   var favorites: List<BubbleItem> = emptyList()
   var suggestions: List<BubbleItem> = emptyList()
 
+  /** The card's texts in the app's language, sent by JS with the lists. */
+  private var labels: Map<String, String> = emptyMap()
+
+  /** A text from JS, or the English fallback until JS has sent them. */
+  fun label(key: String, fallback: String): String = labels[key]?.ifEmpty { null } ?: fallback
+
   /** The app is on screen: no bubble then (the mini player does that job). */
   var foreground = true
 
@@ -73,6 +79,8 @@ object BubbleState {
     val o = JSONObject(json)
     favorites = items(o.optJSONArray("favorites"))
     suggestions = items(o.optJSONArray("suggestions"))
+    val l = o.optJSONObject("labels")
+    if (l != null) labels = l.keys().asSequence().associateWith { l.optString(it) }
   }
 
   private fun items(a: JSONArray?): List<BubbleItem> =

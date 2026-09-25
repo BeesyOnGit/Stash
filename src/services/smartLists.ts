@@ -1,17 +1,20 @@
+import { tr, type Key } from '../i18n';
 import type { Track } from '../types';
 
 export type SmartList = 'recent' | 'most' | 'downloaded';
 
-export const SMART_LISTS: Array<{ id: SmartList; name: string }> = [
-  { id: 'recent', name: 'Recently added' },
-  { id: 'most', name: 'Most played' },
-  { id: 'downloaded', name: 'Downloaded' },
+/** The automatic playlists; names are looked up when shown (see smartListName). */
+export const SMART_LISTS: Array<{ id: SmartList; nameKey: Key }> = [
+  { id: 'recent', nameKey: 'library.smartRecent' },
+  { id: 'most', nameKey: 'library.smartMost' },
+  { id: 'downloaded', nameKey: 'library.smartDownloaded' },
 ];
 
 const LIMIT = 100;
 
+/** An automatic playlist's name, in the current language. */
 export const smartListName = (id: SmartList) =>
-  SMART_LISTS.find(x => x.id === id)!.name;
+  tr(SMART_LISTS.find(x => x.id === id)!.nameKey);
 
 /** The songs of an automatic playlist, from the whole library. */
 export function smartTracks(id: SmartList, tracks: Track[]): Track[] {

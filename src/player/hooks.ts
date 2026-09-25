@@ -6,6 +6,7 @@ import {
   subscribeDownloads,
 } from '../services/downloader';
 import type { Playlist, Track } from '../types';
+import { tr } from '../i18n';
 import { PlayerService } from './PlayerService';
 
 export const usePlayerState = () =>
@@ -22,7 +23,11 @@ export const useCurrentTrack = () => {
   return queue[index] ?? null;
 };
 
-/** What's left on the sleep timer ("12 min", "40 s", "End of song"), or null when off. */
+/**
+ * What's left on the sleep timer ("12 min", "40 s", "End of song"), in the
+ * app's language, or null when off. To tell "end of song" apart, check
+ * `usePlayerState().sleep` (it has `endOfSong` instead of `at`).
+ */
 export function useSleepLeft(): string | null {
   const { sleep } = usePlayerState();
   const [now, setNow] = useState(Date.now());
@@ -34,9 +39,11 @@ export function useSleepLeft(): string | null {
     return () => clearInterval(id);
   }, [at]);
   if (!sleep) return null;
-  if (!at) return 'End of song';
+  if (!at) return tr('player.sleepEndOfSong');
   const s = Math.max(0, Math.round((at - now) / 1000));
-  return s >= 60 ? `${Math.ceil(s / 60)} min` : `${s} s`;
+  return s >= 60
+    ? tr('player.sleepMinutes', { count: Math.ceil(s / 60) })
+    : tr('player.sleepSeconds', { count: s });
 }
 
 /** 0..1 while the track is being downloaded, otherwise undefined. */

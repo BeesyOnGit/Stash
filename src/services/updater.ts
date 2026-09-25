@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import { tr } from '../i18n';
 import { removeFile } from './paths';
 
 const REPO = 'BeesyOnGit/Stash';
@@ -119,7 +120,7 @@ export function startUpdateChecks(show: (release: Release) => void) {
       if (await notificationsAllowed()) {
         Native.showNotification(
           release.version,
-          'Tap to update — your library stays as it is.',
+          tr('settings.updateNotification'),
         );
       }
       openIfAsked();
@@ -181,7 +182,9 @@ export async function downloadAndInstall(
   });
   const res = await task;
   if (res.info().status >= 400) {
-    throw new Error(`Download failed (HTTP ${res.info().status})`);
+    throw new Error(
+      tr('settings.updateDownloadFailed', { status: res.info().status }),
+    );
   }
 
   if (release.shaUrl) {
@@ -195,7 +198,7 @@ export async function downloadAndInstall(
     ).toLowerCase();
     if (!expected || expected !== actual) {
       await removeFile(path).catch(() => {});
-      throw new Error('The download is damaged — try again');
+      throw new Error(tr('settings.updateDamaged'));
     }
   }
 
@@ -204,7 +207,7 @@ export async function downloadAndInstall(
     Native.openInstallPermission();
     await backInApp();
     if (!(await Native.canInstall())) {
-      throw new Error('Allow stash to install apps to update it');
+      throw new Error(tr('settings.updateInstallPermission'));
     }
   }
   onStep({ step: 'installing' });

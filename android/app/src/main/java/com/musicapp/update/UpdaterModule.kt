@@ -90,10 +90,15 @@ class UpdaterModule(context: ReactApplicationContext) : ReactContextBaseJavaModu
   fun showNotification(version: String, text: String) {
     val ctx = reactApplicationContext
     val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+    // Created every time: an existing channel then takes its name in the phone's current language.
+    if (Build.VERSION.SDK_INT >= 26) {
       nm.createNotificationChannel(
-        NotificationChannel(CHANNEL, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
-          description = "When a new version of stash is available"
+        NotificationChannel(
+          CHANNEL,
+          ctx.getString(R.string.update_channel_name),
+          NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+          description = ctx.getString(R.string.update_channel_description)
         },
       )
     }
@@ -110,7 +115,7 @@ class UpdaterModule(context: ReactApplicationContext) : ReactContextBaseJavaModu
     val n = NotificationCompat.Builder(ctx, CHANNEL)
       .setSmallIcon(R.drawable.ic_stat_update)
       .setColor(0xFFE0532F.toInt())
-      .setContentTitle("stash $version is available")
+      .setContentTitle(ctx.getString(R.string.update_available_title, version))
       .setContentText(text)
       .setStyle(NotificationCompat.BigTextStyle().bigText(text))
       .setContentIntent(tap)

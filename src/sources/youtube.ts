@@ -5,6 +5,7 @@
  *   Public instances go up and down; self-hosting one is the reliable option.
  */
 import { getSettings } from '../services/settings';
+import { tr } from '../i18n';
 import type { OnlineResult, ResolvedStream } from '../types';
 import { getJson, splitArtistTitle } from './http';
 import { innertubeSearch, innertubeStream } from './innertube';
@@ -56,7 +57,7 @@ async function pipedStream(base: string, id: string): Promise<ResolvedStream> {
       bitrate: s.bitrate,
     })),
   );
-  if (!best) throw new Error('No audio stream found for this video');
+  if (!best) throw new Error(tr('system.noStream'));
   return best;
 }
 
@@ -122,7 +123,7 @@ async function invidiousStream(
         bitrate: Number(f.bitrate) || 0,
       })),
   );
-  if (!best) throw new Error('No audio stream found for this video');
+  if (!best) throw new Error(tr('system.noStream'));
   return best;
 }
 

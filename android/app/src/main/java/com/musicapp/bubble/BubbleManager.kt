@@ -373,7 +373,7 @@ object BubbleManager {
           bottomMargin = px(9f)
         },
       )
-      contentDescription = "stash — tap for controls, drag to move"
+      contentDescription = BubbleState.label("bubble", "stash — tap for controls, drag to move")
     }
   }
 

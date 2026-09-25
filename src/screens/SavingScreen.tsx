@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrackRow } from '../components/TrackRow';
+import { tr } from '../i18n';
 import { PlayerService } from '../player/PlayerService';
 import { useDownloads, useLibrary } from '../player/hooks';
 import {
@@ -54,7 +55,9 @@ export function SavingScreen() {
       contentContainerStyle={[styles.pad, { paddingTop: insets.top }]}
     >
       <View style={styles.head}>
-        <Text style={[styles.h1, { color: t.ink }]}>Saving</Text>
+        <Text style={[styles.h1, { color: t.ink }]}>
+          {tr('library.savingTitle')}
+        </Text>
         <View
           style={[
             styles.card,
@@ -63,10 +66,13 @@ export function SavingScreen() {
         >
           <View style={styles.between}>
             <Text style={[font(600, 14), { color: t.ink }]}>
-              Offline storage
+              {tr('library.offlineStorage')}
             </Text>
             <Text style={[mono(400, 12), { color: t.muted }]}>
-              {formatBytes(used)} of {storageLimitGB} GB
+              {tr('library.storageUsed', {
+                used: formatBytes(used),
+                limit: storageLimitGB,
+              })}
             </Text>
           </View>
           <View style={[styles.track, { backgroundColor: t.fill3 }]}>
@@ -84,12 +90,10 @@ export function SavingScreen() {
       </View>
 
       <Text style={[font(600, 15), styles.section, { color: t.ink }]}>
-        In progress
+        {tr('library.inProgress')}
       </Text>
       {!activeIds.length && (
-        <Note style={styles.mx20}>
-          Nothing saving. Play something from Search and it lands here.
-        </Note>
+        <Note style={styles.mx20}>{tr('library.nothingSaving')}</Note>
       )}
       {activeIds.map(id => {
         const x = byId.get(id);
@@ -119,7 +123,7 @@ export function SavingScreen() {
                 <View style={[styles.barFill, { width: `${pct}%` }]} />
               </View>
               <Text style={[font(400, 12), styles.mt5, { color: t.muted }]}>
-                from {sourceLabel[x.source]}
+                {tr('library.fromSource', { source: sourceLabel[x.source] })}
               </Text>
             </View>
           </View>
@@ -127,23 +131,21 @@ export function SavingScreen() {
       })}
 
       <Text style={[font(600, 15), styles.section, { color: t.ink }]}>
-        Saved this session
+        {tr('library.savedSession')}
       </Text>
       {!saved.length && (
-        <Note style={styles.mx20}>
-          Songs you save will show here, then live in your Library.
-        </Note>
+        <Note style={styles.mx20}>{tr('library.savedSessionEmpty')}</Note>
       )}
       {saved.map((x, i) => (
         <TrackRow
           key={x.id}
           track={x}
           showNew={false}
-          subtitle={`${x.artist ?? 'Unknown artist'} · ${
+          subtitle={`${x.artist ?? tr('common.unknownArtist')} · ${
             x.sizeBytes ? formatBytes(x.sizeBytes) : '—'
           }`}
           onPress={() =>
-            PlayerService.playQueue(saved, i, 'Saved this session')
+            PlayerService.playQueue(saved, i, tr('library.savedSession'))
           }
           right={
             <View style={styles.check}>

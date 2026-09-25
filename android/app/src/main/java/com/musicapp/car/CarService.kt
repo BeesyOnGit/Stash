@@ -81,14 +81,18 @@ class CarService : MediaLibraryService() {
     if (s.canLike) {
       list += button(
         CMD_LIKE,
-        if (s.liked) "Unlike" else "Like",
+        s.likeLabel.ifEmpty { if (s.liked) "Unlike" else "Like" },
         if (s.liked) R.drawable.ic_car_heart_filled else R.drawable.ic_car_heart,
       )
     }
-    list += button(CMD_SPEED, "Speed ${formatSpeed(s.speed)}×", R.drawable.ic_car_speed)
+    list += button(
+      CMD_SPEED,
+      s.speedLabel.ifEmpty { "Speed ${formatSpeed(s.speed)}×" },
+      R.drawable.ic_car_speed,
+    )
     list += button(
       CMD_SHUFFLE,
-      if (s.shuffle) "Shuffle off" else "Shuffle on",
+      s.shuffleLabel.ifEmpty { if (s.shuffle) "Shuffle off" else "Shuffle on" },
       if (s.shuffle) R.drawable.ic_car_shuffle_on else R.drawable.ic_car_shuffle,
     )
     return ImmutableList.copyOf(list)

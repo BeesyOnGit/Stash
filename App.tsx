@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Splash } from './src/components/Splash';
+import { tr, useLanguage } from './src/i18n';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { convertOldDownloads } from './src/services/convert';
 import { keepOldDownloads } from './src/services/keep';
@@ -14,6 +15,7 @@ import { startUpdateChecks } from './src/services/updater';
 import { openSheet, toast } from './src/state/ui';
 
 export default function App() {
+  const language = useLanguage();
   useEffect(() => {
     (async () => {
       await ensureDirs();
@@ -38,8 +40,8 @@ export default function App() {
     const stopListening = onDownloadFinished((track, ok) =>
       toast(
         ok
-          ? `“${track.title}” saved — plays offline now`
-          : `Couldn't save “${track.title}”`,
+          ? tr('system.downloadSaved', { title: track.title })
+          : tr('system.downloadFailed', { title: track.title }),
       ),
     );
     return () => {
@@ -52,7 +54,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <RootNavigator />
+      {/* A new language redraws every screen (where you are is kept). */}
+      <RootNavigator key={language} />
       <Splash />
     </SafeAreaProvider>
   );

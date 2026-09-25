@@ -4,7 +4,13 @@
  * plays from the phone.
  */
 import ReactNativeBlobUtil from 'react-native-blob-util';
-import { deleteTrackRow, getTracksByStatus, updateTrack } from '../db/database';
+import {
+  deleteTrackRow,
+  getTrack,
+  getTracksByStatus,
+  updateTrack,
+} from '../db/database';
+import { ensureArtwork } from './artwork';
 import type { ResolvedStream, Track } from '../types';
 import { convertToM4a, needsConversion } from './convert';
 import { KEEP_DIR, downloadFolder, keepAfterUninstall } from './keep';
@@ -153,6 +159,11 @@ export async function downloadTrack(
     });
     finishedListeners.forEach(fn => fn(track, true));
     ensureWaveform({ ...track, status: 'ready', filePath: path });
+    // Details and cover are looked up when the download starts; if that
+    // couldn't happen (offline, lookup failed), try again now it's saved.
+    const saved = await getTrack(track.id);
+    if (saved && (!saved.metaCheckedAt || !saved.artworkPath))
+      ensureArtwork(saved, track.source !== 'jamendo').catch(() => {});
   } catch (e) {
     // Don't leave half files or "ghost" entries in the library; the song can simply be played again.
     await removeFile(path).catch(() => {});

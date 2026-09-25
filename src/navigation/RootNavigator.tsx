@@ -3,6 +3,7 @@ import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  type NavigationState,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
@@ -15,6 +16,7 @@ import { PlayerScreen } from '../screens/PlayerScreen';
 import { SavingScreen } from '../screens/SavingScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { StatsScreen } from '../screens/StatsScreen';
 import { useSettings } from '../services/settings';
 import { useTheme } from '../theme';
 import { Toast } from '../ui/Toast';
@@ -38,6 +40,9 @@ function LibraryTab() {
   );
 }
 
+/** Where you are, so remounting (on a language change) brings you back there. */
+let savedState: NavigationState | undefined;
+
 const renderTabBar = (props: React.ComponentProps<typeof TabBar>) => (
   <TabBar {...props} />
 );
@@ -48,6 +53,7 @@ function Tabs() {
       <Tab.Screen name="Library" component={LibraryTab} />
       <Tab.Screen name="Search" component={SearchScreen} />
       <Tab.Screen name="Saving" component={SavingScreen} />
+      <Tab.Screen name="Stats" component={StatsScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -77,7 +83,11 @@ export function RootNavigator() {
     <NavigationContainer
       ref={navigationRef}
       theme={navTheme}
-      onStateChange={() => setRoute(navigationRef.getCurrentRoute()?.name)}
+      initialState={savedState}
+      onStateChange={state => {
+        savedState = state;
+        setRoute(navigationRef.getCurrentRoute()?.name);
+      }}
     >
       <StatusBar barStyle={lightBar ? 'light-content' : 'dark-content'} />
       <Root.Navigator screenOptions={{ headerShown: false }}>

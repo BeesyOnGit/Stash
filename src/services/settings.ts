@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { getSettingSync, setSettingSync } from '../db/database';
+import {
+  currentLanguage,
+  setLanguagePref,
+  type LanguagePref,
+} from '../i18n';
 
 /** `device`: straight from the phone (youtubei.js); otherwise via a front-end API instance. */
 export type YoutubeBackend = 'device' | 'piped' | 'invidious';
@@ -46,6 +51,8 @@ export interface Settings {
   haptics: boolean;
   /** How strong the haptics are ("light" is the phone's own touch feedback). */
   hapticStrength: HapticStrength;
+  /** App language; "system" follows the phone (English if we don't have it). */
+  language: LanguagePref;
 }
 
 export type HapticStrength = 'light' | 'medium' | 'strong';
@@ -62,7 +69,9 @@ export type RingColor = 'white' | 'orange' | 'cover' | 'green' | 'blue';
 export type VinylStyle = 'classic' | 'colour' | 'picture' | 'clear';
 
 export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-export const speedLabel = (v: number) => `${v}×`;
+/** "1.25×", with a decimal comma where the language uses one ("1,25×"). */
+export const speedLabel = (v: number) =>
+  `${currentLanguage() === 'en' ? v : String(v).replace('.', ',')}×`;
 
 export const CROSSFADES = [0, 2, 4, 6, 8, 12];
 
@@ -90,6 +99,7 @@ const DEFAULTS: Settings = {
   vinylStyle: 'classic',
   haptics: true,
   hapticStrength: 'medium',
+  language: 'system',
 };
 
 let cache: Settings | null = null;
@@ -105,6 +115,7 @@ export function getSettings(): Settings {
       cache.youtubeBackend = 'device';
     }
     cache.version = VERSION;
+    setLanguagePref(cache.language);
   }
   return cache;
 }
@@ -115,6 +126,7 @@ export function saveSettings(patch: Partial<Settings>): Settings {
     cache.youtubeInstance = cache.youtubeInstance.trim().replace(/\/+$/, '');
   }
   setSettingSync('app', JSON.stringify(cache));
+  setLanguagePref(cache.language);
   listeners.forEach(fn => fn());
   return cache;
 }

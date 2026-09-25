@@ -3,6 +3,7 @@
  * Needs a free client id: https://devportal.jamendo.com
  */
 import { getSettings } from '../services/settings';
+import { tr } from '../i18n';
 import type { OnlineResult } from '../types';
 import { getJson } from './http';
 import type { MusicSource } from './types';
@@ -56,7 +57,7 @@ export const jamendoSource: MusicSource = {
       );
       url = data.results[0]?.audio;
     }
-    if (!url) throw new Error('Track not available on Jamendo');
+    if (!url) throw new Error(tr('system.notOnJamendo'));
     return { url, mimeType: 'audio/mpeg' };
   },
   preferCoverLookup: false,

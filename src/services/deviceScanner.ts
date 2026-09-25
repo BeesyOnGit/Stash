@@ -12,6 +12,7 @@ import {
   updateTrack,
   upsertTrack,
 } from '../db/database';
+import { tr } from '../i18n';
 import { trackIdFor, type Track } from '../types';
 import { ensureArtwork } from './artwork';
 import { KEEP_DIR, parseKeptFileName } from './keep';
@@ -28,10 +29,9 @@ export async function requestAudioPermission(): Promise<boolean> {
       : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
   if (await PermissionsAndroid.check(permission)) return true;
   const res = await PermissionsAndroid.request(permission, {
-    title: 'Music on this phone',
-    message:
-      'Allow access to your audio files to play the music already on your phone.',
-    buttonPositive: 'Allow',
+    title: tr('system.permTitle'),
+    message: tr('system.permMessage'),
+    buttonPositive: tr('system.permAllow'),
   });
   return res === PermissionsAndroid.RESULTS.GRANTED;
 }

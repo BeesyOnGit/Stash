@@ -13,11 +13,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrackRow } from '../components/TrackRow';
+import { tr, type Key } from '../i18n';
 import type { LibraryStackParamList } from '../navigation/types';
 import { PlayerService } from '../player/PlayerService';
 import { useLibrary } from '../player/hooks';
 import { deleteFromLibrary } from '../services/library';
-import { SMART_LISTS, smartTracks } from '../services/smartLists';
+import {
+  SMART_LISTS,
+  smartListName,
+  smartTracks,
+} from '../services/smartLists';
 import { formatBytes } from '../services/storage';
 import { openSheet, toast } from '../state/ui';
 import {
@@ -52,7 +57,12 @@ import {
 import { Pressable } from '../ui/Pressable';
 
 type Seg = 'songs' | 'playlists' | 'genres';
-type Sort = 'Recent' | 'A–Z' | 'Artist';
+type Sort = 'recent' | 'az' | 'artist';
+const SORTS: { value: Sort; label: Key }[] = [
+  { value: 'recent', label: 'library.sortRecent' },
+  { value: 'az', label: 'library.sortAZ' },
+  { value: 'artist', label: 'library.sortArtist' },
+];
 type Nav = NativeStackNavigationProp<LibraryStackParamList>;
 
 export interface GenreInfo {
@@ -83,7 +93,7 @@ export function LibraryScreen() {
   const { tracks, playlists, byId, loading } = useLibrary();
   const genres = useGenres();
   const [seg, setSeg] = useState<Seg>('songs');
-  const [sort, setSort] = useState<Sort>('Recent');
+  const [sort, setSort] = useState<Sort>('recent');
   /** Ids of the songs picked by long-pressing; null when not choosing. */
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const selecting = seg === 'songs' && !!selected;
@@ -111,8 +121,8 @@ export function LibraryScreen() {
   );
   const sorted = useMemo(() => {
     const list = [...ready];
-    if (sort === 'A–Z') list.sort((a, b) => a.title.localeCompare(b.title));
-    if (sort === 'Artist')
+    if (sort === 'az') list.sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === 'artist')
       list.sort((a, b) => (a.artist ?? '').localeCompare(b.artist ?? ''));
     return list;
   }, [ready, sort]);
@@ -145,7 +155,7 @@ export function LibraryScreen() {
   const allLiked = picked.length > 0 && picked.every(x => x.liked);
 
   const playPicked = () => {
-    PlayerService.playQueue(picked, 0, 'Selected songs', false);
+    PlayerService.playQueue(picked, 0, tr('library.selectedQueue'), false);
     done();
   };
   const addPicked = () => {
@@ -156,32 +166,36 @@ export function LibraryScreen() {
     for (const x of picked) {
       if (x.liked === allLiked) await PlayerService.toggleLike(x);
     }
-    toast(allLiked ? 'Removed from Liked' : `Liked ${picked.length} songs`);
+    toast(
+      allLiked
+        ? tr('library.unliked')
+        : tr('library.likedCount', { count: picked.length }),
+    );
     done();
   };
   const deletePicked = () => {
     const playingId = PlayerService.current?.id;
     const removable = picked.filter(x => x.id !== playingId);
     if (!removable.length) {
-      toast('Can’t remove the song that’s playing');
+      toast(tr('library.cantRemovePlaying'));
       return;
     }
     const n = removable.length;
     Alert.alert(
-      `Remove ${n} song${n === 1 ? '' : 's'}?`,
-      'Saved songs are deleted from the phone. Songs from this phone are only hidden until the next scan.' +
+      tr('library.removeTitle', { count: n }),
+      tr('library.removeBody') +
         (removable.length < picked.length
-          ? '\n\nThe song that’s playing stays.'
+          ? '\n\n' + tr('library.removePlayingStays')
           : ''),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: tr('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: tr('common.remove'),
           style: 'destructive',
           onPress: async () => {
             done();
             for (const x of removable) await deleteFromLibrary(x);
-            toast(`Removed ${n} song${n === 1 ? '' : 's'}`);
+            toast(tr('library.removedCount', { count: n }));
           },
         },
       ],
@@ -198,8 +212,12 @@ export function LibraryScreen() {
     <View>
       <View style={styles.head}>
         <View>
-          <Text style={[eyebrow(), { color: t.muted }]}>On this device</Text>
-          <Text style={[styles.h1, { color: t.ink }]}>Library</Text>
+          <Text style={[eyebrow(), { color: t.muted }]}>
+            {tr('library.eyebrow')}
+          </Text>
+          <Text style={[styles.h1, { color: t.ink }]}>
+            {tr('library.title')}
+          </Text>
         </View>
         <View
           style={[
@@ -209,7 +227,8 @@ export function LibraryScreen() {
         >
           <CheckCircleIcon color={GREEN} />
           <Text style={[font(500, 12), { color: t.ink2 }]}>
-            {ready.length} songs · {formatBytes(totalBytes)}
+            {tr('common.songs', { count: ready.length })} ·{' '}
+            {formatBytes(totalBytes)}
           </Text>
         </View>
       </View>
@@ -219,9 +238,9 @@ export function LibraryScreen() {
           value={seg}
           onChange={setSeg}
           options={[
-            { value: 'songs', label: 'Songs' },
-            { value: 'playlists', label: 'Playlists' },
-            { value: 'genres', label: 'Genres' },
+            { value: 'songs', label: tr('library.segSongs') },
+            { value: 'playlists', label: tr('library.segPlaylists') },
+            { value: 'genres', label: tr('library.segGenres') },
           ]}
         />
       </View>
@@ -230,35 +249,47 @@ export function LibraryScreen() {
         <View>
           {recent.length > 0 && (
             <Carousel
-              title="Recently played"
+              title={tr('library.recentlyPlayed')}
               tracks={recent}
               onPlay={x =>
-                PlayerService.playQueue([x], 0, 'Recently played', false)
+                PlayerService.playQueue(
+                  [x],
+                  0,
+                  tr('library.recentlyPlayed'),
+                  false,
+                )
               }
             />
           )}
           {justSaved.length > 0 && (
             <Carousel
-              title="Just saved"
-              badge="From the web"
+              title={tr('library.justSaved')}
+              badge={tr('library.fromWeb')}
               tracks={justSaved}
-              subtitle={x => `from ${sourceLabel[x.source]}`}
-              onPlay={x => PlayerService.playQueue([x], 0, 'Just saved', false)}
+              subtitle={x =>
+                tr('library.fromSource', { source: sourceLabel[x.source] })
+              }
+              onPlay={x =>
+                PlayerService.playQueue([x], 0, tr('library.justSaved'), false)
+              }
             />
           )}
           <View style={styles.buttons}>
             <Pressable
               onPress={() =>
-                PlayerService.playQueue(sorted, 0, 'Library', false)
+                PlayerService.playQueue(sorted, 0, tr('library.title'), false)
               }
               style={[styles.bigBtn, { backgroundColor: t.ink }]}
             >
               <PlayIcon color={t.onInk} />
-              <Text style={[font(600, 14), { color: t.onInk }]}>Play</Text>
+              <Text style={[font(600, 14), { color: t.onInk }]}>
+                {tr('common.play')}
+              </Text>
             </Pressable>
             <Pressable
               onPress={() =>
-                sorted.length && PlayerService.shuffleAll(sorted, 'Library')
+                sorted.length &&
+                PlayerService.shuffleAll(sorted, tr('library.title'))
               }
               style={[
                 styles.bigBtn,
@@ -267,24 +298,23 @@ export function LibraryScreen() {
               ]}
             >
               <ShuffleIcon color={t.ink} />
-              <Text style={[font(600, 14), { color: t.ink }]}>Shuffle</Text>
+              <Text style={[font(600, 14), { color: t.ink }]}>
+                {tr('common.shuffle')}
+              </Text>
             </Pressable>
           </View>
           <View style={styles.sorts}>
-            {(['Recent', 'A–Z', 'Artist'] as Sort[]).map(s => (
+            {SORTS.map(s => (
               <Chip
-                key={s}
-                label={s}
-                on={sort === s}
-                onPress={() => setSort(s)}
+                key={s.value}
+                label={tr(s.label)}
+                on={sort === s.value}
+                onPress={() => setSort(s.value)}
               />
             ))}
           </View>
           {!loading && !sorted.length && (
-            <Note style={styles.noteMargin}>
-              No music yet. Pull down to scan this phone, or find songs in
-              Search — they save while you listen.
-            </Note>
+            <Note style={styles.noteMargin}>{tr('library.empty')}</Note>
           )}
         </View>
       )}
@@ -298,7 +328,7 @@ export function LibraryScreen() {
                 <PlusIcon color={t.ink} />
               </View>
             }
-            title="New playlist"
+            title={tr('library.newPlaylist')}
           />
           <ListRow
             onPress={() => nav.navigate('Collection', { kind: 'liked' })}
@@ -307,8 +337,10 @@ export function LibraryScreen() {
                 <HeartSolidIcon size={26} color="#fff" />
               </View>
             }
-            title="Liked songs"
-            meta={`${liked.length} songs · auto playlist`}
+            title={tr('library.likedSongs')}
+            meta={`${tr('common.songs', { count: liked.length })} · ${tr(
+              'library.autoPlaylistMeta',
+            )}`}
           />
           {smart.map(s => (
             <ListRow
@@ -323,8 +355,10 @@ export function LibraryScreen() {
                   radius={14}
                 />
               }
-              title={s.name}
-              meta={`${s.tracks.length} songs · auto playlist`}
+              title={smartListName(s.id)}
+              meta={`${tr('common.songs', { count: s.tracks.length })} · ${tr(
+                'library.autoPlaylistMeta',
+              )}`}
               chevron
             />
           ))}
@@ -338,7 +372,7 @@ export function LibraryScreen() {
                 <CoverGrid uris={covers(p.trackIds)} size={62} radius={14} />
               }
               title={p.name}
-              meta={`${p.trackIds.length} songs`}
+              meta={tr('common.songs', { count: p.trackIds.length })}
               chevron
             />
           ))}
@@ -348,10 +382,7 @@ export function LibraryScreen() {
       {seg === 'genres' && (
         <View style={styles.genreGrid}>
           {!genres.length && (
-            <Note style={styles.fullWidth}>
-              Genres appear once your songs have been looked up online (Settings
-              → Look up song details).
-            </Note>
+            <Note style={styles.fullWidth}>{tr('library.genresEmpty')}</Note>
           )}
           {genres.map(g => (
             <GenreTile
@@ -380,7 +411,7 @@ export function LibraryScreen() {
         renderItem={({ item, index }) => (
           <TrackRow
             track={item}
-            subtitle={[item.artist ?? 'Unknown artist', item.genre]
+            subtitle={[item.artist ?? tr('common.unknownArtist'), item.genre]
               .filter(Boolean)
               .join(' · ')}
             selected={selecting ? selected!.has(item.id) : undefined}
@@ -394,7 +425,7 @@ export function LibraryScreen() {
               PlayerService.playQueue(
                 playable,
                 playable.indexOf(sorted[index]),
-                'Library',
+                tr('library.title'),
               );
             }}
             onMenu={() => openSheet({ kind: 'menu', track: item })}
@@ -416,13 +447,13 @@ export function LibraryScreen() {
             <Pressable
               onPress={done}
               hitSlop={8}
-              accessibilityLabel="Stop selecting"
+              accessibilityLabel={tr('library.stopSelecting')}
               style={[styles.selectClose, { backgroundColor: t.fill }]}
             >
               <CloseIcon size={10} color={t.ink} />
             </Pressable>
             <Text style={[font(600, 17), styles.flex, { color: t.ink }]}>
-              {picked.length} selected
+              {tr('library.selectedCount', { count: picked.length })}
             </Text>
             <Pressable
               haptic="tick"
@@ -436,18 +467,27 @@ export function LibraryScreen() {
               }
             >
               <Text style={[font(600, 14), { color: ACCENT }]}>
-                {picked.length === sorted.length ? 'Select none' : 'Select all'}
+                {picked.length === sorted.length
+                  ? tr('library.selectNone')
+                  : tr('library.selectAll')}
               </Text>
             </Pressable>
           </View>
           <View style={styles.selectActions}>
-            <SelectAction label="Play" onPress={playPicked} />
-            <SelectAction label="Add to playlist" onPress={addPicked} />
+            <SelectAction label={tr('common.play')} onPress={playPicked} />
             <SelectAction
-              label={allLiked ? 'Unlike' : 'Like'}
+              label={tr('library.addToPlaylist')}
+              onPress={addPicked}
+            />
+            <SelectAction
+              label={allLiked ? tr('library.unlike') : tr('library.like')}
               onPress={likePicked}
             />
-            <SelectAction label="Remove" danger onPress={deletePicked} />
+            <SelectAction
+              label={tr('common.remove')}
+              danger
+              onPress={deletePicked}
+            />
           </View>
         </View>
       )}
@@ -526,7 +566,7 @@ function Carousel({
               numberOfLines={1}
               style={[font(400, 12, 1.3), { color: t.muted }]}
             >
-              {subtitle ? subtitle(x) : x.artist ?? 'Unknown artist'}
+              {subtitle ? subtitle(x) : x.artist ?? tr('common.unknownArtist')}
             </Text>
           </Pressable>
         ))}
@@ -607,7 +647,7 @@ export function GenreTile({
         {genre.name}
       </Text>
       <Text style={[mono(500, 12), styles.gCount, { color: c.ink }]}>
-        {genre.tracks.length} songs
+        {tr('common.songs', { count: genre.tracks.length })}
       </Text>
     </Pressable>
   );

@@ -11,6 +11,7 @@ import {
 import Svg, { Circle } from 'react-native-svg';
 import type { VinylStyle } from '../services/settings';
 import type { Palette } from '../theme';
+import { tr } from '../i18n';
 
 /** One turn, like the design (a slow 10 rpm spin reads better than a real 33). */
 const PERIOD_MS = 6000;
@@ -18,17 +19,44 @@ const PERIOD_MS = 6000;
 /**
  * Disc colour and how much of it the cover takes. `big` is the player's record
  * (small centre hole), `small` the bubble's and the settings previews (a label).
- * Same values as the native bubble (bubble/VinylView.kt).
+ * Same values as the native bubble (bubble/VinylView.kt). `label` is a getter
+ * so it reads in the current language each time it is shown.
  */
 export const VINYL: Record<
   VinylStyle,
   { label: string; disc: string | null; big: number; small: number; op: number }
 > = {
-  classic: { label: 'Classic', disc: '#141414', big: 12, small: 30, op: 1 },
-  colour: { label: 'Colour', disc: null, big: 12, small: 30, op: 1 },
-  picture: { label: 'Picture', disc: '#141414', big: 0, small: 0, op: 1 },
+  classic: {
+    get label() {
+      return tr('sheets.vinylClassic');
+    },
+    disc: '#141414',
+    big: 12,
+    small: 30,
+    op: 1,
+  },
+  colour: {
+    get label() {
+      return tr('sheets.vinylColour');
+    },
+    disc: null,
+    big: 12,
+    small: 30,
+    op: 1,
+  },
+  picture: {
+    get label() {
+      return tr('sheets.vinylPicture');
+    },
+    disc: '#141414',
+    big: 0,
+    small: 0,
+    op: 1,
+  },
   clear: {
-    label: 'Clear',
+    get label() {
+      return tr('sheets.vinylClear');
+    },
     disc: 'rgba(255,255,255,0.22)',
     big: 20,
     small: 32,

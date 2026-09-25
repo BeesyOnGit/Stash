@@ -2,6 +2,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { tr, type Key } from '../i18n';
 import { useDownloads } from '../player/hooks';
 import { getActiveDownloadIds } from '../services/downloader';
 import { ACCENT, font, mono, useTheme } from '../theme';
@@ -10,6 +11,7 @@ import {
   LibraryTabIcon,
   SearchIcon,
   SettingsTabIcon,
+  StatsTabIcon,
 } from '../ui/icons';
 import { MiniPlayer } from './MiniPlayer';
 import { Pressable } from '../ui/Pressable';
@@ -18,10 +20,19 @@ const ICONS: Record<string, (c: string) => React.ReactNode> = {
   Library: c => <LibraryTabIcon color={c} />,
   Search: c => <SearchIcon size={24} color={c} strokeWidth={2} />,
   Saving: c => <DownloadIcon size={24} color={c} strokeWidth={2} />,
+  Stats: c => <StatsTabIcon color={c} />,
   Settings: c => <SettingsTabIcon color={c} />,
 };
 
-/** Mini player + the design's four-tab bar (with the Saving badge). */
+const LABELS: Record<string, Key> = {
+  Library: 'settings.tabLibrary',
+  Search: 'settings.tabSearch',
+  Saving: 'settings.tabSaving',
+  Stats: 'settings.tabStats',
+  Settings: 'settings.tabSettings',
+};
+
+/** Mini player + the five-tab bar (with the Saving badge). */
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -44,10 +55,14 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
         {state.routes.map((route, i) => {
           const focused = state.index === i;
           const color = focused ? t.ink : t.muted2;
+          const label = LABELS[route.name]
+            ? tr(LABELS[route.name])
+            : route.name;
           return (
             <Pressable
               key={route.key}
               accessibilityRole="tab"
+              accessibilityLabel={label}
               accessibilityState={{ selected: focused }}
               onPress={() => {
                 const e = navigation.emit({
@@ -65,7 +80,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               style={styles.tab}
             >
               {ICONS[route.name]?.(color)}
-              <Text style={[font(500, 11), { color }]}>{route.name}</Text>
+              <Text style={[font(500, 11), { color }]}>{label}</Text>
               {route.name === 'Saving' && active > 0 && (
                 <View style={styles.badge}>
                   <Text style={[mono(600, 10), styles.badgeText]}>

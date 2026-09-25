@@ -10,6 +10,7 @@
  *   Opus as fallback) — no re-encoding, so no quality loss.
  */
 import Innertube, { Log, Platform } from 'youtubei.js/react-native';
+import { tr } from '../i18n';
 import type { OnlineResult, ResolvedStream } from '../types';
 import { fold, splitArtistTitle } from './http';
 
@@ -101,13 +102,13 @@ export async function innertubeSearch(query: string): Promise<OnlineResult[]> {
   };
   for (const s of songs.filter(x => x?.id)) {
     add(
-      toResult(s, String(s.title ?? 'Unknown title'), artistsOf(s.artists)),
+      toResult(s, String(s.title ?? tr('system.unknownTitle')), artistsOf(s.artists)),
       false,
     );
   }
   for (const v of videos.filter(x => x?.id)) {
     const { title, artist } = splitArtistTitle(
-      String(v.title ?? 'Unknown title'),
+      String(v.title ?? tr('system.unknownTitle')),
       artistsOf(v.authors ?? v.artists),
     );
     add(toResult(v, title, artist), true);
@@ -136,7 +137,7 @@ export async function innertubeUpNext(
       return {
         source: 'youtube' as const,
         sourceId: String(v.video_id),
-        title: String(v.title?.toString() ?? 'Unknown title'),
+        title: String(v.title?.toString() ?? tr('system.unknownTitle')),
         artist: artistsOf(v.artists) ?? (v.author ? String(v.author) : null),
         album: v.album?.name ?? null,
         duration: v.duration?.seconds ?? null,
@@ -182,7 +183,7 @@ export async function innertubeStream(
         });
       }
       const url = await format.decipher(yt.session.player);
-      if (!url) throw new Error('No playable URL');
+      if (!url) throw new Error(tr('system.noStream'));
       return {
         url,
         mimeType: format.mime_type?.split(';')[0] ?? null,
@@ -201,7 +202,7 @@ export async function innertubeStream(
   session = null;
   throw lastError instanceof Error
     ? lastError
-    : new Error('YouTube stream unavailable');
+    : new Error(tr('system.noStream'));
 }
 
 /** YouTube Music's lyrics for a video (plain text) and their credit, e.g. "Source: LyricFind". */

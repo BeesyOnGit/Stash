@@ -7,6 +7,16 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.1.7
+
+- **stash speaks your language:** the app now comes in English, French, Arabic, Spanish and German, and uses your phone's language by default (English if it isn't one of these). Pick another one in Settings → Language. In Arabic the app is laid out right to left; switching to or from Arabic takes effect after restarting stash.
+- **Listening stats:** a new Stats tab in the bottom bar shows how long you've listened over the last 7 days, 30 days or all time, with plays, songs, a daily average, your day streak, your favourite hour and how much of your library you've played. Charts show listening per day (per month for all time) and by hour of the day; tap a bar for its value. Top songs, artists and genres are listed with their listening time. Time is counted as you listen, so stats start from this version.
+- **Swipe the cover:** in the player, swipe the cover left for the next song and right for the one before. It moves with your finger, with the next or previous cover coming in beside it, and carries on into the new song when you let go.
+- **Arrange the queue:** in the Queue, drag a song by its ≡ handle to move it, or swipe it sideways to take it out of the queue (it stays in your library).
+- **Reorder playlists:** drag songs by their ≡ handle to put a playlist in the order you want.
+- **Add to queue:** the song menu has "Add to queue" next to "Play next", to play a song after everything that's already coming up.
+- **Details right away for downloads:** a downloaded song gets its official name, cover, album and genre as the download starts. If that can't happen then (for example offline), they're looked up again when the download finishes.
+
 ## 1.1.6
 
 - **Choose the song change animation:** Slide (the page swipes toward the next or previous song), Fade (the song fades out, then the next one fades in), Zoom (the song shrinks away and the next one settles in) or Flip (cover, title and waveform flip over like a card). Settings → Appearance → Song change.

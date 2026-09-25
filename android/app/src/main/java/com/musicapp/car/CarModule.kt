@@ -53,6 +53,9 @@ class CarModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(c
       s.shuffle = p.getBoolean("shuffle")
       s.liked = p.getBoolean("liked")
       s.canLike = p.getBoolean("canLike")
+      s.likeLabel = if (p.hasKey("likeLabel")) p.getString("likeLabel") ?: "" else ""
+      s.speedLabel = if (p.hasKey("speedLabel")) p.getString("speedLabel") ?: "" else ""
+      s.shuffleLabel = if (p.hasKey("shuffleLabel")) p.getString("shuffleLabel") ?: "" else ""
       s.setPosition((p.getDouble("position") * 1000).toLong())
       s.changed()
     }

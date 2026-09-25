@@ -50,11 +50,14 @@ import {
   CheckCircleIcon,
   CheckIcon,
   GlobeIcon,
+  GripIcon,
   ShuffleIcon,
 } from '../ui/icons';
 import { Cover, CoverGrid, Equalizer, Spinner } from '../ui/primitives';
+import { SwipeToRemove, useReorder } from '../ui/reorder';
 import { Sheet } from '../ui/Sheet';
 import { Pressable } from '../ui/Pressable';
+import { tr } from '../i18n';
 
 export function Sheets() {
   const { sheet } = useUi();
@@ -89,7 +92,7 @@ function SongHeader({ track }: { track: QueueItem }) {
         </Text>
         <Text numberOfLines={1} style={[font(400, 13), { color: t.muted }]}>
           {[track.artist, track.genre].filter(Boolean).join(' · ') ||
-            'Unknown artist'}
+            tr('common.unknownArtist')}
         </Text>
       </View>
     </View>
@@ -123,21 +126,31 @@ function MenuSheet({
     onPress: () => void;
   }> = [
     {
-      label: 'Play next',
+      label: tr('sheets.playNext'),
       onPress: () => {
         PlayerService.playNext(track);
         closeSheet();
       },
     },
   ];
+  if (!isCurrent) {
+    actions.push({
+      label: tr('sheets.addToQueue'),
+      hint: tr('sheets.atTheEnd'),
+      onPress: () => {
+        PlayerService.addToQueue(track);
+        closeSheet();
+      },
+    });
+  }
   if (track.status !== 'streaming') {
     actions.push(
       {
-        label: 'Add to playlist…',
+        label: tr('sheets.addToPlaylistMenu'),
         onPress: () => openSheet({ kind: 'add', track }),
       },
       {
-        label: track.liked ? 'Remove from Liked' : 'Like',
+        label: track.liked ? tr('sheets.removeFromLiked') : tr('sheets.like'),
         onPress: () => {
           PlayerService.toggleLike(track);
           closeSheet();
@@ -147,7 +160,7 @@ function MenuSheet({
   }
   if (isCurrent) {
     actions.push({
-      label: 'Sleep timer…',
+      label: tr('sheets.sleepTimerMenu'),
       hint: sleepLeft ?? undefined,
       onPress: () => openSheet({ kind: 'sleep' }),
     });
@@ -155,7 +168,7 @@ function MenuSheet({
   if (track.genre) {
     const genre = track.genre;
     actions.push({
-      label: 'Go to genre',
+      label: tr('sheets.goToGenre'),
       hint: genre,
       onPress: () => {
         closeSheet();
@@ -168,7 +181,7 @@ function MenuSheet({
   }
   if (inPlaylist?.trackIds.includes(track.id)) {
     actions.push({
-      label: `Remove from “${inPlaylist.name}”`,
+      label: tr('sheets.removeFromPlaylist', { name: inPlaylist.name }),
       onPress: () => {
         togglePlaylistTrack(inPlaylist.id, track.id);
         closeSheet();
@@ -177,7 +190,7 @@ function MenuSheet({
   }
   if (track.status === 'streaming' && online) {
     actions.push({
-      label: 'Save offline',
+      label: tr('sheets.saveOffline'),
       onPress: () => {
         PlayerService.saveOffline(track);
         closeSheet();
@@ -187,7 +200,9 @@ function MenuSheet({
   if (track.status === 'ready' && !isCurrent) {
     actions.push({
       label:
-        track.source === 'device' ? 'Hide from library' : 'Remove from device',
+        track.source === 'device'
+          ? tr('sheets.hideFromLibrary')
+          : tr('sheets.removeFromDevice'),
       hint: track.sizeBytes ? formatBytes(track.sizeBytes) : undefined,
       danger: true,
       onPress: () => {
@@ -195,8 +210,8 @@ function MenuSheet({
         closeSheet();
         toast(
           track.source === 'device'
-            ? 'Hidden until the next scan'
-            : 'Removed from device',
+            ? tr('sheets.hiddenToast')
+            : tr('sheets.removedToast'),
         );
       },
     });
@@ -324,13 +339,13 @@ function AddSheet({ track }: { track: QueueItem }) {
     if (!n) return;
     await createPlaylist(n, [track.id]);
     closeSheet();
-    toast(`Added to “${n}”`);
+    toast(tr('sheets.addedTo', { name: n }));
   };
 
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        Add to playlist
+        {tr('sheets.addToPlaylist')}
       </Text>
       <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
         {track.title}
@@ -340,7 +355,7 @@ function AddSheet({ track }: { track: QueueItem }) {
         <NameInput
           value={name}
           onChange={setName}
-          placeholder="New playlist name"
+          placeholder={tr('sheets.newPlaylistName')}
         />
         <Pressable
           onPress={create}
@@ -349,7 +364,9 @@ function AddSheet({ track }: { track: QueueItem }) {
             { backgroundColor: name.trim() ? t.ink : t.muted2 },
           ]}
         >
-          <Text style={[font(600, 14), { color: t.onInk }]}>Create</Text>
+          <Text style={[font(600, 14), { color: t.onInk }]}>
+            {tr('sheets.create')}
+          </Text>
         </Pressable>
       </View>
       <View style={styles.pickList}>
@@ -357,7 +374,7 @@ function AddSheet({ track }: { track: QueueItem }) {
           <PlaylistPick
             key={p.id}
             name={p.name}
-            meta={`${p.trackIds.length} songs`}
+            meta={tr('common.songs', { count: p.trackIds.length })}
             covers={covers(p.trackIds)}
             checked={p.trackIds.includes(track.id)}
             onPress={() => togglePlaylistTrack(p.id, track.id)}
@@ -377,37 +394,39 @@ function AddManySheet({ trackIds }: { trackIds: string[] }) {
       const x = byId.get(id);
       return x ? artworkUri(x) : null;
     });
-  const songs = `${trackIds.length} song${trackIds.length === 1 ? '' : 's'}`;
+  const count = trackIds.length;
 
   const create = async () => {
     const n = name.trim();
     if (!n) return;
     await createPlaylist(n, trackIds);
     closeSheet();
-    toast(`Added ${songs} to “${n}”`);
+    toast(tr('sheets.addedSongsTo', { count, name: n }));
   };
 
   const addTo = async (id: string, listName: string) => {
     const added = await addTracksToPlaylist(id, trackIds);
     closeSheet();
     toast(
-      added ? `Added ${added} to “${listName}”` : `Already in “${listName}”`,
+      added
+        ? tr('sheets.addedSongsTo', { count: added, name: listName })
+        : tr('sheets.alreadyIn', { name: listName }),
     );
   };
 
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        Add to playlist
+        {tr('sheets.addToPlaylist')}
       </Text>
       <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
-        {songs} selected
+        {tr('sheets.selected', { count })}
       </Text>
       <View style={styles.createRow}>
         <NameInput
           value={name}
           onChange={setName}
-          placeholder="New playlist name"
+          placeholder={tr('sheets.newPlaylistName')}
         />
         <Pressable
           onPress={create}
@@ -416,7 +435,9 @@ function AddManySheet({ trackIds }: { trackIds: string[] }) {
             { backgroundColor: name.trim() ? t.ink : t.muted2 },
           ]}
         >
-          <Text style={[font(600, 14), { color: t.onInk }]}>Create</Text>
+          <Text style={[font(600, 14), { color: t.onInk }]}>
+            {tr('sheets.create')}
+          </Text>
         </Pressable>
       </View>
       <View style={styles.pickList}>
@@ -424,7 +445,7 @@ function AddManySheet({ trackIds }: { trackIds: string[] }) {
           <PlaylistPick
             key={p.id}
             name={p.name}
-            meta={`${p.trackIds.length} songs`}
+            meta={tr('common.songs', { count: p.trackIds.length })}
             covers={covers(p.trackIds)}
             checked={trackIds.every(id => p.trackIds.includes(id))}
             onPress={() => addTo(p.id, p.name)}
@@ -440,6 +461,8 @@ const SLEEP_MINUTES = [15, 30, 45, 60, 90];
 function SleepSheet() {
   const t = useTheme();
   const left = useSleepLeft();
+  const { sleep } = usePlayerState();
+  const endOfSong = !!sleep && 'endOfSong' in sleep;
   const pick = (when: number | 'endOfSong') => {
     PlayerService.setSleep(when);
     closeSheet();
@@ -447,14 +470,14 @@ function SleepSheet() {
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        Sleep timer
+        {tr('sheets.sleepTitle')}
       </Text>
       <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
         {left
-          ? left === 'End of song'
-            ? 'Pauses when this song ends'
-            : `Pauses in ${left} · fades out first`
-          : 'The music fades out, then pauses'}
+          ? endOfSong
+            ? tr('sheets.sleepEndOfSongActive')
+            : tr('sheets.sleepPausesIn', { time: left })
+          : tr('sheets.sleepIntro')}
       </Text>
       <View style={styles.speedGrid}>
         {SLEEP_MINUTES.map(m => (
@@ -465,7 +488,7 @@ function SleepSheet() {
           >
             <Text style={[mono(600, 18), { color: t.ink }]}>{m}</Text>
             <Text style={[font(400, 11), styles.speedHint, { color: t.ink }]}>
-              min
+              {tr('sheets.minutes')}
             </Text>
           </Pressable>
         ))}
@@ -473,7 +496,9 @@ function SleepSheet() {
           onPress={() => pick('endOfSong')}
           style={[styles.speedBtn, { backgroundColor: t.fill2 }]}
         >
-          <Text style={[font(600, 14), { color: t.ink }]}>End of song</Text>
+          <Text style={[font(600, 14), { color: t.ink }]}>
+            {tr('sheets.endOfSong')}
+          </Text>
         </Pressable>
       </View>
       {!!left && (
@@ -485,7 +510,7 @@ function SleepSheet() {
           style={styles.laterBtn}
         >
           <Text style={[font(500, 14), { color: t.danger }]}>
-            Turn off sleep timer
+            {tr('sheets.sleepOff')}
           </Text>
         </Pressable>
       )}
@@ -506,13 +531,13 @@ function NewPlaylistSheet() {
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        New playlist
+        {tr('sheets.newPlaylist')}
       </Text>
       <View style={styles.mt16}>
         <NameInput
           value={name}
           onChange={setName}
-          placeholder="Give it a name"
+          placeholder={tr('sheets.giveItAName')}
           big
           autoFocus
         />
@@ -524,7 +549,9 @@ function NewPlaylistSheet() {
           { backgroundColor: name.trim() ? t.ink : t.muted2 },
         ]}
       >
-        <Text style={[font(600, 15), { color: t.onInk }]}>Create playlist</Text>
+        <Text style={[font(600, 15), { color: t.onInk }]}>
+          {tr('sheets.createPlaylist')}
+        </Text>
       </Pressable>
     </View>
   );
@@ -536,9 +563,16 @@ function QueueSheet() {
     usePlayerState();
   const cur = queue[index];
   const upNext = queue.slice(index + 1);
+  const reorder = useReorder(upNext.length, (from, to) =>
+    PlayerService.moveInQueue(index + 1 + from, index + 1 + to),
+  );
   const mode = [
-    shuffle ? 'Shuffle on' : 'In order',
-    repeat === 'one' ? 'repeat one' : repeat === 'all' ? 'repeat all' : null,
+    shuffle ? tr('sheets.shuffleOn') : tr('sheets.inOrder'),
+    repeat === 'one'
+      ? tr('sheets.repeatOne')
+      : repeat === 'all'
+      ? tr('sheets.repeatAll')
+      : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -548,12 +582,12 @@ function QueueSheet() {
     <View>
       <View style={[styles.pad, styles.queueHead]}>
         <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-          Queue
+          {tr('sheets.queue')}
         </Text>
         <Text style={[font(400, 13), { color: t.muted }]}>{mode}</Text>
       </View>
       <Text style={[eyebrow(11), styles.queueLabel, { color: t.muted }]}>
-        Now playing
+        {tr('sheets.nowPlaying')}
       </Text>
       <View style={styles.queueRow}>
         <View>
@@ -572,7 +606,7 @@ function QueueSheet() {
             {cur.title}
           </Text>
           <Text numberOfLines={1} style={[font(400, 13), { color: t.muted }]}>
-            {cur.artist ?? 'Unknown artist'}
+            {cur.artist ?? tr('common.unknownArtist')}
           </Text>
         </View>
       </View>
@@ -584,43 +618,65 @@ function QueueSheet() {
           { color: t.muted },
         ]}
       >
-        Up next · {contextName}
+        {tr('sheets.upNext', { name: contextName })}
       </Text>
       {!upNext.length && (
         <Text style={[font(400, 14), styles.endText, { color: t.muted }]}>
-          End of queue.
+          {tr('sheets.endOfQueue')}
         </Text>
       )}
       {upNext.map((q, k) => (
-        <Pressable
-          key={q.id + k}
-          onPress={() => PlayerService.skipTo(index + 1 + k)}
-          style={({ pressed }) => [
-            styles.queueRow,
-            pressed && { backgroundColor: t.fill },
-          ]}
+        <SwipeToRemove
+          key={q.id}
+          onRemove={() => PlayerService.removeFromQueueOnly(q.id)}
+          style={[{ backgroundColor: t.card }, reorder.rowStyle(k)]}
         >
-          <Cover
-            uri={artworkUri(q)}
-            size={46}
-            radius={10}
-            bg={paletteFor(q).artBg}
-          />
-          <View style={styles.flex}>
-            <Text numberOfLines={1} style={[font(500, 15), { color: t.ink }]}>
-              {q.title}
-            </Text>
-            <Text numberOfLines={1} style={[font(400, 13), { color: t.muted }]}>
-              {q.artist ?? 'Unknown artist'}
-            </Text>
-          </View>
-          {!!q.duration && (
-            <Text style={[mono(400, 12), { color: t.muted2 }]}>
-              {formatTime(q.duration)}
-            </Text>
-          )}
-        </Pressable>
+          <Pressable
+            onLayout={k === 0 ? reorder.measure : undefined}
+            onPress={() => PlayerService.skipTo(index + 1 + k)}
+            style={({ pressed }) => [
+              styles.queueRow,
+              pressed && { backgroundColor: t.fill },
+            ]}
+          >
+            <Cover
+              uri={artworkUri(q)}
+              size={46}
+              radius={10}
+              bg={paletteFor(q).artBg}
+            />
+            <View style={styles.flex}>
+              <Text numberOfLines={1} style={[font(500, 15), { color: t.ink }]}>
+                {q.title}
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={[font(400, 13), { color: t.muted }]}
+              >
+                {q.artist ?? tr('common.unknownArtist')}
+              </Text>
+            </View>
+            {!!q.duration && (
+              <Text style={[mono(400, 12), { color: t.muted2 }]}>
+                {formatTime(q.duration)}
+              </Text>
+            )}
+            <View
+              {...reorder.handle(k)}
+              hitSlop={8}
+              accessibilityLabel={tr('sheets.dragToReorder')}
+              style={styles.grip}
+            >
+              <GripIcon color={t.muted2} />
+            </View>
+          </Pressable>
+        </SwipeToRemove>
       ))}
+      {upNext.length > 1 && (
+        <Text style={[font(400, 12), styles.queueHint, { color: t.muted2 }]}>
+          {tr('sheets.queueHint')}
+        </Text>
+      )}
     </View>
   );
 }
@@ -645,23 +701,23 @@ function UpdateSheet({ release }: { release: Release }) {
   };
 
   const label = !step
-    ? 'Update'
+    ? tr('sheets.update')
     : step.step === 'downloading'
-    ? `Downloading ${Math.round(step.progress * 100)}%`
+    ? tr('sheets.downloading', { percent: Math.round(step.progress * 100) })
     : step.step === 'verifying'
-    ? 'Checking the download…'
+    ? tr('sheets.verifying')
     : step.step === 'permission'
-    ? 'Allow installing, then come back'
-    : 'Opening the installer…';
+    ? tr('sheets.allowInstall')
+    : tr('sheets.openingInstaller');
 
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        Update available
+        {tr('sheets.updateAvailable')}
       </Text>
       <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
         stash {release.version}
-        {current ? ` · you have ${current}` : ''}
+        {current ? ` · ${tr('sheets.youHave', { version: current })}` : ''}
         {release.size ? ` · ${formatBytes(release.size)}` : ''}
       </Text>
       {!!release.notes && (
@@ -675,7 +731,7 @@ function UpdateSheet({ release }: { release: Release }) {
         </ScrollView>
       )}
       <Text style={[font(400, 12, 1.4), styles.mt10, { color: t.muted }]}>
-        Your library, downloads and settings stay as they are.
+        {tr('sheets.updateKeeps')}
       </Text>
       {!!error && (
         <Text style={[font(500, 13), styles.mt10, { color: t.danger }]}>
@@ -695,7 +751,7 @@ function UpdateSheet({ release }: { release: Release }) {
           <Spinner color={t.onInk} track="rgba(255,255,255,0.3)" />
         )}
         <Text style={[font(600, 14), { color: t.onInk }]}>
-          {error ? 'Try again' : label}
+          {error ? tr('common.retry') : label}
         </Text>
       </Pressable>
       {step?.step === 'downloading' && (
@@ -710,7 +766,9 @@ function UpdateSheet({ release }: { release: Release }) {
       )}
       {!busy && (
         <Pressable onPress={closeSheet} style={styles.laterBtn}>
-          <Text style={[font(500, 14), { color: t.muted }]}>Later</Text>
+          <Text style={[font(500, 14), { color: t.muted }]}>
+            {tr('sheets.later')}
+          </Text>
         </Pressable>
       )}
     </View>
@@ -723,10 +781,10 @@ function SpeedSheet() {
   return (
     <View style={styles.pad}>
       <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
-        Playback speed
+        {tr('sheets.speedTitle')}
       </Text>
       <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
-        Applies to everything you play · pitch stays the same
+        {tr('sheets.speedHint')}
       </Text>
       <View style={styles.speedGrid}>
         {SPEEDS.map(v => {
@@ -753,7 +811,11 @@ function SpeedSheet() {
                   { color: on ? t.onInk : t.ink },
                 ]}
               >
-                {v === 1 ? 'Normal' : v < 1 ? 'Slower' : 'Faster'}
+                {v === 1
+                  ? tr('sheets.speedNormal')
+                  : v < 1
+                  ? tr('sheets.speedSlower')
+                  : tr('sheets.speedFaster')}
               </Text>
             </Pressable>
           );
@@ -786,13 +848,16 @@ function SimilarSheet({ track }: { track: QueueItem }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track.id]);
 
-  const ctx = `Similar to ${track.title}`;
-  const basis = [track.artist, track.genre].filter(Boolean).join(' and ');
+  const ctx = tr('sheets.similarTo', { title: track.title });
+  const basis =
+    track.artist && track.genre
+      ? tr('sheets.basisBoth', { artist: track.artist, genre: track.genre })
+      : track.artist || track.genre || tr('sheets.whatYoureListening');
   const reason = found?.fromYoutube
-    ? 'What YouTube recommends after this song'
+    ? tr('sheets.fromYoutube')
     : found
-    ? `Offline — based on ${basis || 'what you’re playing'}`
-    : 'Asking YouTube…';
+    ? tr('sheets.offlineBasedOn', { basis })
+    : tr('sheets.askingYoutube');
   const empty = !local.length && online !== null && !online.length;
 
   return (
@@ -827,7 +892,7 @@ function SimilarSheet({ track }: { track: QueueItem }) {
           >
             <ShuffleIcon color={t.onInk} />
             <Text style={[font(600, 14), { color: t.onInk }]}>
-              Play random suggestions
+              {tr('sheets.playRandom')}
             </Text>
           </Pressable>
         )}
@@ -835,7 +900,7 @@ function SimilarSheet({ track }: { track: QueueItem }) {
       {empty && (
         <View style={[styles.note, { backgroundColor: t.fill }]}>
           <Text style={[font(400, 14, 1.4), { color: t.ink2 }]}>
-            Nothing similar yet. Search to find more.
+            {tr('sheets.nothingSimilar')}
           </Text>
         </View>
       )}
@@ -844,7 +909,9 @@ function SimilarSheet({ track }: { track: QueueItem }) {
           <SimilarRow
             key={x.id}
             title={x.title}
-            sub={`${x.artist ?? 'Unknown artist'} · On device`}
+            sub={`${x.artist ?? tr('common.unknownArtist')} · ${tr(
+              'sheets.onDevice',
+            )}`}
             art={artworkUri(x)}
             bg={paletteFor(x).artBg}
             icon={<CheckCircleIcon size={18} color={GREEN} />}
@@ -858,13 +925,15 @@ function SimilarSheet({ track }: { track: QueueItem }) {
           <SimilarRow
             key={r.source + r.sourceId}
             title={r.title}
-            sub={`${r.artist ?? 'Unknown artist'} · ${sourceName(r.source)}`}
+            sub={`${r.artist ?? tr('common.unknownArtist')} · ${sourceName(
+              r.source,
+            )}`}
             art={r.thumbnailUrl}
             bg={paletteFor(r).artBg}
             icon={<GlobeIcon size={18} color={ACCENT} />}
             onPress={() => {
               closeSheet();
-              PlayerService.playOnline(r, 'Suggested');
+              PlayerService.playOnline(r, tr('sheets.suggested'));
             }}
           />
         ))}
@@ -872,7 +941,7 @@ function SimilarSheet({ track }: { track: QueueItem }) {
           <View style={styles.looking}>
             <Spinner color={ACCENT} track={t.accentSoft2} />
             <Text style={[font(400, 13), { color: t.muted }]}>
-              Getting YouTube’s recommendations…
+              {tr('sheets.gettingRecs')}
             </Text>
           </View>
         )}
@@ -979,6 +1048,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   queueLabel: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
+  grip: {
+    width: 36,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -10,
+  },
+  queueHint: { textAlign: 'center', paddingVertical: 12 },
   queueRow: {
     flexDirection: 'row',
     alignItems: 'center',

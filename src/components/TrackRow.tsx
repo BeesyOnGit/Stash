@@ -7,6 +7,7 @@ import { haptic } from '../services/haptics';
 import { CheckIcon, HeartSolidIcon, MoreIcon } from '../ui/icons';
 import { Badge, Cover, Equalizer } from '../ui/primitives';
 import { Pressable } from '../ui/Pressable';
+import { tr } from '../i18n';
 
 const NEW_FOR_MS = 24 * 3600 * 1000;
 
@@ -37,6 +38,8 @@ interface Props {
   onPress: () => void;
   onLongPress?: () => void;
   onMenu?: () => void;
+  /** After the menu (a playlist's drag handle). */
+  trailing?: React.ReactNode;
 }
 
 export function TrackRow({
@@ -52,6 +55,7 @@ export function TrackRow({
   onPress,
   onLongPress,
   onMenu,
+  trailing,
 }: Props) {
   const t = useTheme();
   const current = useCurrentTrack();
@@ -97,13 +101,13 @@ export function TrackRow({
           >
             {track.title}
           </Text>
-          {isNew && <Badge label="New" />}
+          {isNew && <Badge label={tr('sheets.newBadge')} />}
         </View>
         <Text
           numberOfLines={1}
           style={[font(400, 13, 1.35), { color: t.muted }]}
         >
-          {subtitle ?? (track.artist || 'Unknown artist')}
+          {subtitle ?? (track.artist || tr('common.unknownArtist'))}
         </Text>
       </View>
       {selected !== undefined ? (
@@ -136,6 +140,7 @@ export function TrackRow({
           </>
         )
       )}
+      {trailing}
     </Pressable>
   );
 }

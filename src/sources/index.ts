@@ -1,3 +1,4 @@
+import { tr } from '../i18n';
 import type { OnlineResult } from '../types';
 import { jamendoSource } from './jamendo';
 import type { MusicSource } from './types';
@@ -55,7 +56,7 @@ export async function searchOnline(
           status: 'failed',
           // React Native's fetch reports "no connection" as this generic message.
           error: /Network request failed/i.test(message)
-            ? 'no internet connection — turn on Wi-Fi or mobile data'
+            ? tr('system.noInternet')
             : message,
         };
       }
