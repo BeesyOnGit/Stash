@@ -7,6 +7,7 @@ import { deletePlaylist } from '../db/database';
 import type { LibraryStackParamList } from '../navigation/types';
 import { PlayerService } from '../player/PlayerService';
 import { useLibrary } from '../player/hooks';
+import { smartListName, smartTracks } from '../services/smartLists';
 import { openSheet, toast } from '../state/ui';
 import { eyebrow, font, genreColors, paletteFor, useTheme } from '../theme';
 import { artworkUri, type Track } from '../types';
@@ -29,6 +30,13 @@ export function CollectionScreen({ route, navigation }: Props) {
         name: 'Liked songs',
         kind: 'Playlist',
         list: ready.filter(x => x.liked),
+      };
+    }
+    if (p.kind === 'smart') {
+      return {
+        name: smartListName(p.list),
+        kind: 'Auto playlist',
+        list: smartTracks(p.list, tracks),
       };
     }
     if (p.kind === 'genre') {
@@ -131,8 +139,11 @@ export function CollectionScreen({ route, navigation }: Props) {
       </View>
       {!list.length && (
         <Note style={styles.empty}>
-          No songs yet. Use the ••• menu on any song, or the add button in the
-          player.
+          {p.kind === 'smart'
+            ? p.list === 'most'
+              ? 'Songs you listen to show up here.'
+              : 'Songs you save show up here.'
+            : 'No songs yet. Use the ••• menu on any song, or the add button in the player.'}
         </Note>
       )}
     </View>

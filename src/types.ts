@@ -35,6 +35,8 @@ export interface Track {
   /** When a download finished (null for device files). */
   savedAt: number | null;
   lastPlayedAt: number | null;
+  /** Times listened past the first 30 s (or half of a short song). */
+  playCount?: number;
 }
 
 /** A song found on an online platform (not necessarily in the library). */

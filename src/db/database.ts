@@ -28,6 +28,7 @@ const MIGRATIONS: Array<[string, string]> = [
   ['saved_at', 'INTEGER'],
   ['last_played_at', 'INTEGER'],
   ['waveform', 'TEXT'],
+  ['play_count', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 const existing = new Set(
   db.executeSync('PRAGMA table_info(tracks)').rows.map(r => r.name as string),
@@ -94,6 +95,7 @@ const toTrack = (r: Row): Track => ({
   addedAt: r.added_at as number,
   savedAt: (r.saved_at as number) ?? null,
   lastPlayedAt: (r.last_played_at as number) ?? null,
+  playCount: (r.play_count as number) ?? 0,
   waveform: r.waveform ? (r.waveform as string).split(',').map(Number) : null,
 });
 
@@ -224,6 +226,14 @@ export async function updateTrack(
   notify();
 }
 
+export async function countPlay(id: string): Promise<void> {
+  await db.execute(
+    'UPDATE tracks SET play_count = play_count + 1 WHERE id = ?',
+    [id],
+  );
+  notify();
+}
+
 export async function deleteTrackRow(id: string): Promise<void> {
   await db.execute('DELETE FROM tracks WHERE id = ?', [id]);
   await db.execute('DELETE FROM playlist_tracks WHERE track_id = ?', [id]);
@@ -323,6 +333,31 @@ export async function togglePlaylistTrack(
   );
   notify();
   return true;
+}
+
+/** Adds the tracks that aren't in the playlist yet, at the end. Returns how many were added. */
+export async function addTracksToPlaylist(
+  playlistId: string,
+  trackIds: string[],
+): Promise<number> {
+  const pos = await db.execute(
+    'SELECT IFNULL(MAX(position), -1) + 1 AS p FROM playlist_tracks WHERE playlist_id = ?',
+    [playlistId],
+  );
+  let next = Number(pos.rows[0]?.p ?? 0);
+  let added = 0;
+  for (const tid of trackIds) {
+    const res = await db.execute(
+      'INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)',
+      [playlistId, tid, next],
+    );
+    if (res.rowsAffected) {
+      next++;
+      added++;
+    }
+  }
+  if (added) notify();
+  return added;
 }
 
 // ---- settings ----

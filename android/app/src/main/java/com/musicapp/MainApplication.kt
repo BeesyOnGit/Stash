@@ -9,6 +9,8 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.musicapp.audio.AudioPackage
 import com.musicapp.bubble.BubblePackage
 import com.musicapp.car.CarPackage
+import com.musicapp.car.CarState
+import com.twg.video.core.services.playback.CustomMediaNotificationProvider
 import com.musicapp.haptics.HapticsPackage
 import com.musicapp.update.UpdaterPackage
 
@@ -31,5 +33,15 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+    // Notification / lock screen ⏮ ⏭ move through the JS queue (react-native-video
+    // is patched for this: patches/react-native-video+*.patch). Same events as the car's.
+    CustomMediaNotificationProvider.onSkip = { type ->
+      if (CarState.emitter != null) {
+        CarState.emit(type)
+        true
+      } else {
+        false
+      }
+    }
   }
 }

@@ -4,11 +4,15 @@
  */
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { createPlaylist, togglePlaylistTrack } from '../db/database';
+import {
+  addTracksToPlaylist,
+  createPlaylist,
+  togglePlaylistTrack,
+} from '../db/database';
 import { navigationRef, openCollection } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
 import { sourceName } from '../sources';
-import { useLibrary, usePlayerState } from '../player/hooks';
+import { useLibrary, usePlayerState, useSleepLeft } from '../player/hooks';
 import { deleteFromLibrary } from '../services/library';
 import { useOnline } from '../services/network';
 import { SPEEDS, speedLabel, useSettings } from '../services/settings';
@@ -61,6 +65,8 @@ export function Sheets() {
       {sheet?.kind === 'new' && <NewPlaylistSheet />}
       {sheet?.kind === 'queue' && <QueueSheet />}
       {sheet?.kind === 'speed' && <SpeedSheet />}
+      {sheet?.kind === 'sleep' && <SleepSheet />}
+      {sheet?.kind === 'addMany' && <AddManySheet trackIds={sheet.trackIds} />}
       {sheet?.kind === 'similar' && <SimilarSheet track={sheet.track} />}
       {sheet?.kind === 'update' && <UpdateSheet release={sheet.release} />}
     </Sheet>
@@ -98,6 +104,7 @@ function MenuSheet({
   const t = useTheme();
   const { byId, playlists } = useLibrary();
   const { queue, index } = usePlayerState();
+  const sleepLeft = useSleepLeft();
   const online = useOnline();
   // Prefer the live library copy (liked/saved may have changed since the sheet opened).
   const track: QueueItem = {
@@ -137,6 +144,13 @@ function MenuSheet({
         },
       },
     );
+  }
+  if (isCurrent) {
+    actions.push({
+      label: 'Sleep timer…',
+      hint: sleepLeft ?? undefined,
+      onPress: () => openSheet({ kind: 'sleep' }),
+    });
   }
   if (track.genre) {
     const genre = track.genre;
@@ -350,6 +364,131 @@ function AddSheet({ track }: { track: QueueItem }) {
           />
         ))}
       </View>
+    </View>
+  );
+}
+
+function AddManySheet({ trackIds }: { trackIds: string[] }) {
+  const t = useTheme();
+  const { playlists, byId } = useLibrary();
+  const [name, setName] = useState('');
+  const covers = (ids: string[]) =>
+    ids.slice(0, 4).map(id => {
+      const x = byId.get(id);
+      return x ? artworkUri(x) : null;
+    });
+  const songs = `${trackIds.length} song${trackIds.length === 1 ? '' : 's'}`;
+
+  const create = async () => {
+    const n = name.trim();
+    if (!n) return;
+    await createPlaylist(n, trackIds);
+    closeSheet();
+    toast(`Added ${songs} to “${n}”`);
+  };
+
+  const addTo = async (id: string, listName: string) => {
+    const added = await addTracksToPlaylist(id, trackIds);
+    closeSheet();
+    toast(
+      added ? `Added ${added} to “${listName}”` : `Already in “${listName}”`,
+    );
+  };
+
+  return (
+    <View style={styles.pad}>
+      <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
+        Add to playlist
+      </Text>
+      <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
+        {songs} selected
+      </Text>
+      <View style={styles.createRow}>
+        <NameInput
+          value={name}
+          onChange={setName}
+          placeholder="New playlist name"
+        />
+        <Pressable
+          onPress={create}
+          style={[
+            styles.createBtn,
+            { backgroundColor: name.trim() ? t.ink : t.muted2 },
+          ]}
+        >
+          <Text style={[font(600, 14), { color: t.onInk }]}>Create</Text>
+        </Pressable>
+      </View>
+      <View style={styles.pickList}>
+        {playlists.map(p => (
+          <PlaylistPick
+            key={p.id}
+            name={p.name}
+            meta={`${p.trackIds.length} songs`}
+            covers={covers(p.trackIds)}
+            checked={trackIds.every(id => p.trackIds.includes(id))}
+            onPress={() => addTo(p.id, p.name)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const SLEEP_MINUTES = [15, 30, 45, 60, 90];
+
+function SleepSheet() {
+  const t = useTheme();
+  const left = useSleepLeft();
+  const pick = (when: number | 'endOfSong') => {
+    PlayerService.setSleep(when);
+    closeSheet();
+  };
+  return (
+    <View style={styles.pad}>
+      <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
+        Sleep timer
+      </Text>
+      <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
+        {left
+          ? left === 'End of song'
+            ? 'Pauses when this song ends'
+            : `Pauses in ${left} · fades out first`
+          : 'The music fades out, then pauses'}
+      </Text>
+      <View style={styles.speedGrid}>
+        {SLEEP_MINUTES.map(m => (
+          <Pressable
+            key={m}
+            onPress={() => pick(m)}
+            style={[styles.speedBtn, { backgroundColor: t.fill2 }]}
+          >
+            <Text style={[mono(600, 18), { color: t.ink }]}>{m}</Text>
+            <Text style={[font(400, 11), styles.speedHint, { color: t.ink }]}>
+              min
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable
+          onPress={() => pick('endOfSong')}
+          style={[styles.speedBtn, { backgroundColor: t.fill2 }]}
+        >
+          <Text style={[font(600, 14), { color: t.ink }]}>End of song</Text>
+        </Pressable>
+      </View>
+      {!!left && (
+        <Pressable
+          onPress={() => {
+            PlayerService.cancelSleep();
+            closeSheet();
+          }}
+          style={styles.laterBtn}
+        >
+          <Text style={[font(500, 14), { color: t.danger }]}>
+            Turn off sleep timer
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }

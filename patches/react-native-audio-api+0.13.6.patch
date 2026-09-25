@@ -1,0 +1,15 @@
+diff --git a/node_modules/react-native-audio-api/android/build.gradle b/node_modules/react-native-audio-api/android/build.gradle
+index 0033a2b..4539112 100644
+--- a/node_modules/react-native-audio-api/android/build.gradle
++++ b/node_modules/react-native-audio-api/android/build.gradle
+@@ -321,6 +321,10 @@ task downloadPrebuiltBinaries(type: Exec) {
+   def isWindows = Os.isFamily(Os.FAMILY_WINDOWS)
+   if (isWindows) {
+     commandLine 'C:\\Program Files\\Git\\usr\\bin\\bash.exe', '../scripts/download-prebuilt-binaries.sh', 'android', isFFmpegDisabled() ? 'skipffmpeg' : ''
++    // Outside Git Bash the script can't find mkdir, rm, curl…: they live next to bash.exe.
++    // Windows spells it "Path"; a second "PATH" entry would be ignored.
++    def pathKey = environment.keySet().find { it.equalsIgnoreCase('PATH') } ?: 'Path'
++    environment pathKey, "C:\\Program Files\\Git\\usr\\bin;C:\\Program Files\\Git\\mingw64\\bin;${environment[pathKey] ?: ''}"
+   } else {
+     commandLine 'chmod', '+x', '../scripts/download-prebuilt-binaries.sh'
+     commandLine 'bash', '../scripts/download-prebuilt-binaries.sh', 'android', isFFmpegDisabled() ? 'skipffmpeg' : ''

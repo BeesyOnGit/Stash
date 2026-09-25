@@ -1,0 +1,153 @@
+diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
+index f333014..122f078 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
+@@ -54,9 +54,18 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
+       SEEK_BACKWARD("COMMAND_SEEK_BACKWARD"),
+       TOGGLE_PLAY("COMMAND_TOGGLE_PLAY"),
+       PLAY("COMMAND_PLAY"),
+-      PAUSE("COMMAND_PAUSE")
++      PAUSE("COMMAND_PAUSE"),
++      PREVIOUS("COMMAND_PREVIOUS"),
++      NEXT("COMMAND_NEXT")
+     }
+ 
++    /**
++     * Set by the app to move through its own queue ("previous" / "next").
++     * Returns false when it can't, and the buttons seek 10 s instead.
++     */
++    @JvmStatic
++    var onSkip: ((String) -> Boolean)? = null
++
+     fun commandFromString(value: String): COMMAND =
+       when (value) {
+         COMMAND.SEEK_FORWARD.stringValue -> COMMAND.SEEK_FORWARD
+@@ -64,6 +73,8 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
+         COMMAND.TOGGLE_PLAY.stringValue -> COMMAND.TOGGLE_PLAY
+         COMMAND.PLAY.stringValue -> COMMAND.PLAY
+         COMMAND.PAUSE.stringValue -> COMMAND.PAUSE
++        COMMAND.PREVIOUS.stringValue -> COMMAND.PREVIOUS
++        COMMAND.NEXT.stringValue -> COMMAND.NEXT
+         else -> COMMAND.NONE
+       }
+ 
+@@ -76,6 +87,8 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
+         COMMAND.TOGGLE_PLAY -> handleCommand(if (session.player.isPlaying) COMMAND.PAUSE else COMMAND.PLAY, session)
+         COMMAND.PLAY -> session.player.play()
+         COMMAND.PAUSE -> session.player.pause()
++        COMMAND.PREVIOUS -> if (onSkip?.invoke("previous") != true) handleCommand(COMMAND.SEEK_BACKWARD, session)
++        COMMAND.NEXT -> if (onSkip?.invoke("next") != true) handleCommand(COMMAND.SEEK_FORWARD, session)
+         else -> Log.w(TAG, "Received COMMAND.NONE - was there an error?")
+       }
+     }
+@@ -103,12 +116,12 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
+     showPauseButton: Boolean
+   ): ImmutableList<CommandButton> {
+     val rewind = CommandButton.Builder()
+-      .setDisplayName("Rewind")
++      .setDisplayName("Previous")
+       .setSessionCommand(androidx.media3.session.SessionCommand(
+-        COMMAND.SEEK_BACKWARD.stringValue,
++        COMMAND.PREVIOUS.stringValue,
+         Bundle.EMPTY
+       ))
+-      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_back_10)
++      .setIconResId(androidx.media3.session.R.drawable.media3_icon_previous)
+       .setExtras(bundleOf(COMMAND_KEY_COMPACT_VIEW_INDEX to 0))
+       .build()
+ 
+@@ -126,12 +139,12 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
+       .build()
+ 
+     val forward = CommandButton.Builder()
+-      .setDisplayName("Forward")
++      .setDisplayName("Next")
+       .setSessionCommand(androidx.media3.session.SessionCommand(
+-        COMMAND.SEEK_FORWARD.stringValue,
++        COMMAND.NEXT.stringValue,
+         Bundle.EMPTY
+       ))
+-      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_forward_10)
++      .setIconResId(androidx.media3.session.R.drawable.media3_icon_next)
+       .setExtras(bundleOf(COMMAND_KEY_COMPACT_VIEW_INDEX to 2))
+       .build()
+ 
+diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
+index 25349a5..600fb0c 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
+@@ -16,25 +16,25 @@ class VideoPlaybackCallback : MediaSession.Callback {
+   // For Android 13+
+   private fun buildCustomButtons(): ImmutableList<CommandButton> {
+     val rewind = CommandButton.Builder()
+-      .setDisplayName("Rewind")
++      .setDisplayName("Previous")
+       .setSessionCommand(
+         SessionCommand(
+-          CustomMediaNotificationProvider.Companion.COMMAND.SEEK_BACKWARD.stringValue,
++          CustomMediaNotificationProvider.Companion.COMMAND.PREVIOUS.stringValue,
+           Bundle.EMPTY
+         )
+       )
+-      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_back_10)
++      .setIconResId(androidx.media3.session.R.drawable.media3_icon_previous)
+       .build()
+ 
+     val forward = CommandButton.Builder()
+-      .setDisplayName("Forward")
++      .setDisplayName("Next")
+       .setSessionCommand(
+         SessionCommand(
+-          CustomMediaNotificationProvider.Companion.COMMAND.SEEK_FORWARD.stringValue,
++          CustomMediaNotificationProvider.Companion.COMMAND.NEXT.stringValue,
+           Bundle.EMPTY
+         )
+       )
+-      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_forward_10)
++      .setIconResId(androidx.media3.session.R.drawable.media3_icon_next)
+       .build()
+ 
+     return ImmutableList.of(rewind, forward)
+@@ -67,6 +67,18 @@ class VideoPlaybackCallback : MediaSession.Callback {
+                 CustomMediaNotificationProvider.Companion.COMMAND.TOGGLE_PLAY.stringValue,
+                 Bundle.EMPTY
+               )
++            )
++            .add(
++              SessionCommand(
++                CustomMediaNotificationProvider.Companion.COMMAND.PREVIOUS.stringValue,
++                Bundle.EMPTY
++              )
++            )
++            .add(
++              SessionCommand(
++                CustomMediaNotificationProvider.Companion.COMMAND.NEXT.stringValue,
++                Bundle.EMPTY
++              )
+             ).build()
+         ).build()
+     } catch (e: Exception) {
+diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
+--- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
+@@ -126,6 +126,20 @@ class VideoPlaybackService : MediaSessionService() {
+   private fun ensurePlayerSession(player: HybridVideoPlayer) {
+     if (mediaSessionsList.containsKey(player)) return
+ 
++    // Hand the existing session to the new player (the next song taking over, while the last
++    // moments of the previous one may still be playing) instead of adding a second session:
++    // releasing a session cancels the shared notification and the foreground state, even
++    // while another player is playing.
++    val handover = mediaSessionsList.entries.singleOrNull()?.takeIf { (other, _) ->
++      other != player
++    }
++    if (handover != null) {
++      mediaSessionsList.remove(handover.key)
++      handover.value.player = player.player
++      mediaSessionsList[player] = handover.value
++      return
++    }
++
+     val builder = MediaSession.Builder(this, player.player)
+       .setId("RNVideoPlaybackService_" + player.hashCode())
+       .setCallback(VideoPlaybackCallback())

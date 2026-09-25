@@ -12,6 +12,8 @@ export type Sheet =
   | { kind: 'new' }
   | { kind: 'queue' }
   | { kind: 'speed' }
+  | { kind: 'sleep' }
+  | { kind: 'addMany'; trackIds: string[] }
   | { kind: 'similar'; track: QueueItem }
   | { kind: 'update'; release: Release };
 

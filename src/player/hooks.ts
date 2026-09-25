@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getAllTracks, getPlaylists, subscribeLibrary } from '../db/database';
 import {
   getDownloadProgress,
@@ -21,6 +21,23 @@ export const useCurrentTrack = () => {
   const { queue, index } = usePlayerState();
   return queue[index] ?? null;
 };
+
+/** What's left on the sleep timer ("12 min", "40 s", "End of song"), or null when off. */
+export function useSleepLeft(): string | null {
+  const { sleep } = usePlayerState();
+  const [now, setNow] = useState(Date.now());
+  const at = sleep && 'at' in sleep ? sleep.at : null;
+  useEffect(() => {
+    if (!at) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [at]);
+  if (!sleep) return null;
+  if (!at) return 'End of song';
+  const s = Math.max(0, Math.round((at - now) / 1000));
+  return s >= 60 ? `${Math.ceil(s / 60)} min` : `${s} s`;
+}
 
 /** 0..1 while the track is being downloaded, otherwise undefined. */
 export const useDownloadProgress = (id: string | undefined) =>

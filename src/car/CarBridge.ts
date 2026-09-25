@@ -14,6 +14,7 @@ import { NativeEventEmitter, NativeModules } from 'react-native';
 import { searchLibrary } from '../db/database';
 import { PlayerService } from '../player/PlayerService';
 import { getLibrarySnapshot, subscribeLibrarySnapshot } from '../player/hooks';
+import { whileAway } from '../services/keepAlive';
 import { isOnline, subscribeNetwork } from '../services/network';
 import { getSettings, subscribeSettings } from '../services/settings';
 import {
@@ -354,11 +355,12 @@ function onEvent(e: CarEvent) {
     case 'pause':
       PlayerService.pause();
       break;
+    // Also sent by the notification and lock screen buttons, often with the screen off.
     case 'next':
-      PlayerService.next();
+      whileAway(() => PlayerService.next()).catch(() => {});
       break;
     case 'previous':
-      PlayerService.previous();
+      whileAway(() => PlayerService.previous()).catch(() => {});
       break;
     case 'seek':
       PlayerService.seekTo(e.position);

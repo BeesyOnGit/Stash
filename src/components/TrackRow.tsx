@@ -3,7 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useCurrentTrack, usePlayerState } from '../player/hooks';
 import { ACCENT, font, formatTime, mono, paletteFor, useTheme } from '../theme';
 import { artworkUri, type Track } from '../types';
-import { HeartSolidIcon, MoreIcon } from '../ui/icons';
+import { haptic } from '../services/haptics';
+import { CheckIcon, HeartSolidIcon, MoreIcon } from '../ui/icons';
 import { Badge, Cover, Equalizer } from '../ui/primitives';
 import { Pressable } from '../ui/Pressable';
 
@@ -31,7 +32,10 @@ interface Props {
   /** Replaces the duration + menu on the right (search result actions). */
   right?: React.ReactNode;
   artSize?: number;
+  /** Set while choosing several songs: shows a check circle instead of the menu. */
+  selected?: boolean;
   onPress: () => void;
+  onLongPress?: () => void;
   onMenu?: () => void;
 }
 
@@ -44,7 +48,9 @@ export function TrackRow({
   showDuration = true,
   right,
   artSize = 50,
+  selected,
   onPress,
+  onLongPress,
   onMenu,
 }: Props) {
   const t = useTheme();
@@ -58,9 +64,16 @@ export function TrackRow({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={
+        onLongPress &&
+        (() => {
+          haptic('confirm');
+          onLongPress();
+        })
+      }
       style={({ pressed }) => [
         styles.row,
-        pressed && { backgroundColor: t.fill },
+        (pressed || selected) && { backgroundColor: t.fill },
       ]}
     >
       <View>
@@ -93,22 +106,35 @@ export function TrackRow({
           {subtitle ?? (track.artist || 'Unknown artist')}
         </Text>
       </View>
-      {right ?? (
-        <>
-          {showLiked && track.liked && (
-            <HeartSolidIcon size={14} color={ACCENT} />
-          )}
-          {showDuration && !!track.duration && (
-            <Text style={[mono(400, 12), { color: t.muted2 }]}>
-              {formatTime(track.duration)}
-            </Text>
-          )}
-          {onMenu && (
-            <Pressable hitSlop={6} onPress={onMenu} style={styles.menu}>
-              <MoreIcon color={t.muted} />
-            </Pressable>
-          )}
-        </>
+      {selected !== undefined ? (
+        <View
+          style={[
+            styles.check,
+            selected
+              ? { backgroundColor: t.ink }
+              : { borderWidth: 2, borderColor: t.line2 },
+          ]}
+        >
+          {selected && <CheckIcon color={t.onInk} />}
+        </View>
+      ) : (
+        right ?? (
+          <>
+            {showLiked && track.liked && (
+              <HeartSolidIcon size={14} color={ACCENT} />
+            )}
+            {showDuration && !!track.duration && (
+              <Text style={[mono(400, 12), { color: t.muted2 }]}>
+                {formatTime(track.duration)}
+              </Text>
+            )}
+            {onMenu && (
+              <Pressable hitSlop={6} onPress={onMenu} style={styles.menu}>
+                <MoreIcon color={t.muted} />
+              </Pressable>
+            )}
+          </>
+        )
       )}
     </Pressable>
   );
@@ -132,6 +158,14 @@ const styles = StyleSheet.create({
   info: { flex: 1, minWidth: 0 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   shrink: { flexShrink: 1 },
+  check: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   menu: {
     width: 36,
     height: 40,

@@ -13,6 +13,8 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 **Library**
 - Songs on the phone and songs you've saved live in one local library (SQLite) and play without a connection.
 - Liked songs, playlists and genres. Phone music is added when you ask: Settings → This phone → Scan for music.
+- Automatic playlists: Recently added, Most played and Downloaded.
+- Long-press a song to select several, then play, add to a playlist, like or remove them together.
 - Cover art and genres looked up automatically and stored on the phone.
 
 **Search and saving**
@@ -25,6 +27,7 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 - Queue, shuffle, repeat, and a waveform seek bar drawn from the song itself.
 - The cover can spin like a vinyl record (four styles) or show as a plain square.
 - Playback speed from 0.5× to 2× with the pitch kept the same.
+- Sleep timer (minutes or end of song) that fades the music out before pausing.
 - **Lyrics**: synced lyrics that follow the song (tap a line to jump there) or plain text, saved for offline. Sources: `.lrc` files next to your songs, [LRCLIB](https://lrclib.net), then an online fallback. "Wrong lyrics?" lets you pick another match.
 - **Similar songs** and a **random suggestions** mode that keeps playing related music, online or offline, until you turn it off.
 - Mini player above the tabs: tap to open, ✕ or swipe sideways to stop.
@@ -95,8 +98,7 @@ android/app/src/main/java/com/musicapp/
 
 ## Known limitations
 
-- The notification and lock screen have play/pause and seek; next/previous are in the app and the bubble.
-- `react-native-video` v7 is a beta: `7.0.0-beta.11` is the tested version.
+- `react-native-video` v7 is a beta: `7.0.0-beta.11` is the tested version. It's patched (`patches/`, applied by `patch-package` on install) so the Android notification's buttons are previous/next instead of ±10 s, and so a preloaded next song can take over the notification without a gap; on iOS the lock screen still skips ±10 s and songs don't preload yet.
 - On iOS the library holds saved songs only (apps can't read the Music library's files), and there's no bubble, haptics or car support yet.
 - Phone files take their title and artist from the file name (`Artist - Title.mp3`); tags aren't read yet.
 

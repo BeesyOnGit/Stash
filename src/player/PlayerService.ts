@@ -9,6 +9,7 @@
 import { Platform } from 'react-native';
 import { VideoPlayer, type VideoConfig } from 'react-native-video';
 import {
+  countPlay,
   getAllTracks,
   getTrack,
   updateTrack,
@@ -36,6 +37,19 @@ import {
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+/** Pause at a time (epoch ms), or when the current song ends. */
+export type SleepTimer = { at: number } | { endOfSong: true };
+
+/** The music fades out over the last seconds of a sleep timer. */
+const SLEEP_FADE_S = 30;
+
+/** How long before the end of a song the next one starts loading. */
+const PRELOAD_BEFORE_END_S = 15;
+/** Android only for now: the notification handover it needs is patched on Android, and iOS is untested. */
+const PRELOAD = Platform.OS === 'android';
+/** A preloaded player takes about this long from play() to its first sound (longer with the screen off). */
+const NEXT_START_DELAY_S = 0.2;
+
 export interface PlayerState {
   /** The list the user started from, in its own order (used to turn shuffle off). */
   context: QueueItem[];
@@ -52,6 +66,7 @@ export interface PlayerState {
   shuffle: boolean;
   /** Random suggestions: when the queue runs out, keep playing similar songs. */
   radio: boolean;
+  sleep: SleepTimer | null;
   error: string | null;
 }
 
@@ -100,9 +115,22 @@ class PlayerServiceImpl {
     repeat: 'off',
     shuffle: false,
     radio: false,
+    sleep: null,
     error: null,
   };
   private progress: Progress = { position: 0, duration: 0 };
+  /** The song loaded last has been counted as played (see countIfListened). */
+  private counted = false;
+  /** Foreground backup for the sleep timer; in the background the progress ticks check it. */
+  private sleepTimeout: ReturnType<typeof setTimeout> | null = null;
+  /** The next song, loaded in a silent player before this one ends (see maybePreload). */
+  private preloaded: { item: QueueItem; player: VideoPlayer } | null = null;
+  /** The load (loadToken) the next song was preloaded for, so it's done once per song. */
+  private preloadedFor = -1;
+  /** The load the next song was started early for (see maybeStartNextOnTime). */
+  private startedNextFor = -1;
+  /** The player of the song before, released once the new one has taken over (see swapTo). */
+  private retiring: VideoPlayer | null = null;
   private stateListeners = new Set<Listener>();
   private progressListeners = new Set<Listener>();
   /** Increments on every load so late async results for an old song are ignored. */
@@ -134,6 +162,11 @@ class PlayerServiceImpl {
 
   private setState(patch: Partial<PlayerState>) {
     this.state = { ...this.state, ...patch };
+    // Queue, shuffle, repeat or sleep timer changed what plays next: load that one instead.
+    if (this.preloaded && this.upcoming()?.id !== this.preloaded.item.id) {
+      this.dropPreloaded();
+      this.preloadedFor = -1;
+    }
     this.stateListeners.forEach(fn => fn());
   }
   private setProgress(p: Progress) {
@@ -147,42 +180,67 @@ class PlayerServiceImpl {
 
   // ---------- native player ----------
 
-  private configure(p: VideoPlayer) {
-    p.playInBackground = true;
-    p.showNotificationControls = true; // lock screen + notification (play/pause/seek)
+  /** A new native player; its events count only while it's `this.player`. */
+  private createPlayer(config: VideoConfig): VideoPlayer {
+    const p = new VideoPlayer(config);
     p.mixAudioMode = 'doNotMix'; // pause other music apps, like a normal music player
-    if (Platform.OS === 'ios') {
-      // iOS-only options (setting them on Android just logs a warning).
-      p.playWhenInactive = true;
-      p.ignoreSilentSwitchMode = 'ignore'; // play even with the mute switch on
-    }
-
     // ExoPlayer keeps the speed across songs (iOS applies it in play()).
     if (Platform.OS !== 'ios') p.rate = getSettings().playbackSpeed;
-    p.addEventListener('onPlaybackStateChange', ({ isPlaying, isBuffering }) =>
-      this.setState({ isPlaying, isBuffering }),
+    const mine = () => p === this.player;
+
+    p.addEventListener(
+      'onPlaybackStateChange',
+      ({ isPlaying, isBuffering }) => {
+        if (mine()) this.setState({ isPlaying, isBuffering });
+      },
     );
-    p.addEventListener('onProgress', ({ currentTime }) =>
+    p.addEventListener('onProgress', ({ currentTime }) => {
+      if (!mine()) return;
       this.setProgress({
         position: currentTime,
         duration: this.progress.duration,
-      }),
-    );
+      });
+      this.countIfListened();
+      this.checkSleep();
+      this.maybePreload();
+      this.maybeStartNextOnTime(currentTime);
+      if (this.retiring && currentTime >= 2) this.releaseRetiring();
+    });
     p.addEventListener('onLoad', ({ duration }) => {
+      if (!mine()) return;
       const d = Number.isFinite(duration) ? duration : 0;
       this.setProgress({ position: 0, duration: d });
-      const cur = this.current;
-      // Device files have no duration until first played; remember it.
-      if (cur && d > 0 && !cur.duration)
-        updateTrack(cur.id, { duration: d }).catch(() => {});
+      this.rememberDuration(d);
     });
-    p.addEventListener('onEnd', () => this.onTrackEnded());
+    p.addEventListener('onEnd', () => {
+      if (mine()) this.onTrackEnded();
+    });
     p.addEventListener('onError', e => {
+      if (!mine()) return;
       this.setState({
         error: e.message ?? 'Playback error',
         isBuffering: false,
       });
     });
+    return p;
+  }
+
+  /** Background playback and the notification: only the player that's playing has them. */
+  private activate(p: VideoPlayer) {
+    p.playInBackground = true;
+    p.showNotificationControls = true; // lock screen + notification
+    if (Platform.OS === 'ios') {
+      // iOS-only options (setting them on Android just logs a warning).
+      p.playWhenInactive = true;
+      p.ignoreSilentSwitchMode = 'ignore'; // play even with the mute switch on
+    }
+  }
+
+  /** Device files have no duration until first played; remember it. */
+  private rememberDuration(d: number) {
+    const cur = this.current;
+    if (cur && d > 0 && !cur.duration)
+      updateTrack(cur.id, { duration: d }).catch(() => {});
   }
 
   private sourceConfig(item: QueueItem): VideoConfig {
@@ -226,56 +284,223 @@ class PlayerServiceImpl {
     });
   }
 
+  /** The item with something to play: its file if it's saved by now, otherwise a stream URL. */
+  private async playableFor(item: QueueItem): Promise<QueueItem> {
+    if (item.status === 'ready' && item.filePath) return item;
+    // A song may have finished downloading since it was queued — prefer the local file.
+    const fresh = await getTrack(item.id);
+    if (fresh?.status === 'ready') {
+      return { ...item, ...fresh, streamUrl: undefined };
+    }
+    if (item.streamUrl || item.source === 'device') return item;
+    // Not on the phone and no URL yet (e.g. tapped while downloading): stream it again.
+    const stream = await this.streamFor(item);
+    return { ...item, streamUrl: stream.url, streamHeaders: stream.headers };
+  }
+
   private async load(index: number, autoplay = true) {
     const item = this.state.queue[index];
     if (!item) return;
     const token = ++this.loadToken;
 
-    // A song may have finished downloading since it was queued — prefer the local file.
-    let playable: QueueItem = item;
-    if (item.status !== 'ready' || !item.filePath) {
-      const fresh = await getTrack(item.id);
-      if (fresh?.status === 'ready') {
-        playable = { ...item, ...fresh, streamUrl: undefined };
-      } else if (!item.streamUrl && item.source !== 'device') {
-        // Not on the phone and no URL yet (e.g. tapped while downloading): stream it again.
-        try {
-          const stream = await this.streamFor(item);
-          playable = {
-            ...item,
-            streamUrl: stream.url,
-            streamHeaders: stream.headers,
-          };
-        } catch (e: any) {
-          if (token === this.loadToken) {
-            this.setState({ error: `Couldn't play: ${e?.message ?? e}` });
-          }
-          return;
-        }
+    const pre = this.takePreloaded(item.id);
+    if (pre && autoplay) {
+      this.swapTo(pre, index);
+      return;
+    }
+
+    let playable: QueueItem;
+    try {
+      playable = await this.playableFor(item);
+    } catch (e: any) {
+      if (token === this.loadToken) {
+        this.setState({ error: `Couldn't play: ${e?.message ?? e}` });
       }
+      return;
     }
     if (token !== this.loadToken) return;
 
-    const queue = [...this.state.queue];
-    queue[index] = playable;
-    this.setState({ queue, index, error: null, isBuffering: true });
-    this.setProgress({ position: 0, duration: playable.duration ?? 0 });
-    if (playable.status !== 'streaming') {
-      updateTrack(playable.id, { lastPlayedAt: Date.now() }).catch(() => {});
-      ensureWaveform(playable); // real waveform for songs on the phone (once)
-    }
-    lyricsFor(playable).catch(() => {}); // ready when the lyrics are opened
-
+    this.showLoaded(playable, index, true);
     const config = this.sourceConfig(playable);
     if (!this.player) {
-      this.player = new VideoPlayer(config);
-      this.configure(this.player);
+      this.player = this.createPlayer(config);
+      this.activate(this.player);
     } else {
       await this.player.replaceSourceAsync(config);
     }
     this.applyLoop();
     if (token !== this.loadToken) return;
     if (autoplay) this.play();
+  }
+
+  /** The queue, progress and library bookkeeping for the song now loaded. */
+  private showLoaded(playable: QueueItem, index: number, buffering: boolean) {
+    const queue = [...this.state.queue];
+    queue[index] = playable;
+    this.setState({ queue, index, error: null, isBuffering: buffering });
+    this.setProgress({ position: 0, duration: playable.duration ?? 0 });
+    this.counted = false;
+    if (playable.status !== 'streaming') {
+      updateTrack(playable.id, { lastPlayedAt: Date.now() }).catch(() => {});
+      ensureWaveform(playable); // real waveform for songs on the phone (once)
+    }
+    lyricsFor(playable).catch(() => {}); // ready when the lyrics are opened
+  }
+
+  // ---------- the next song, ready before this one ends ----------
+
+  /**
+   * Loads the song that plays next in a second, silent player shortly before
+   * the end, so it starts the moment this one finishes: no gap, no buffering,
+   * and online songs don't wait for their stream URL.
+   */
+  private maybePreload() {
+    const { position, duration } = this.progress;
+    if (
+      !PRELOAD ||
+      this.preloadedFor === this.loadToken ||
+      duration <= 0 ||
+      duration - position > PRELOAD_BEFORE_END_S
+    )
+      return;
+    const token = this.loadToken;
+    this.preloadedFor = token;
+    whileAway(() => this.preloadNext(token)).catch(() => {});
+  }
+
+  /**
+   * The native "ended" event reaches JS most of a second late, so with the next
+   * song preloaded, it's started from the last progress ticks instead: just
+   * early enough for its first sound to follow the end of this one.
+   */
+  private maybeStartNextOnTime(position: number) {
+    const pre = this.preloaded;
+    const left =
+      (this.progress.duration - position) / getSettings().playbackSpeed;
+    if (
+      !pre ||
+      this.startedNextFor === this.loadToken ||
+      left > 0.6 ||
+      left <= 0 ||
+      pre.item.id !== this.upcoming()?.id
+    )
+      return;
+    const token = this.loadToken;
+    this.startedNextFor = token;
+    const wait = Math.max(0, (left - NEXT_START_DELAY_S) * 1000);
+    whileAway(
+      () =>
+        new Promise<void>(resolve =>
+          setTimeout(() => {
+            // Paused, seeked or changed song meanwhile: leave it to the normal end.
+            if (token !== this.loadToken || !this.nativePlaying()) {
+              resolve();
+              return;
+            }
+            this.next(true).finally(resolve);
+          }, wait),
+        ),
+    ).catch(() => {});
+  }
+
+  /** What `next(true)` will play when this song ends, when that's known in advance. */
+  private upcoming(): QueueItem | null {
+    const { queue, index, repeat, shuffle, radio, sleep } = this.state;
+    if (repeat === 'one' || (sleep && 'endOfSong' in sleep)) return null;
+    if (index + 1 < queue.length) return queue[index + 1];
+    // Random suggestions pick at the end, and shuffle reorders when wrapping around.
+    if (radio || repeat !== 'all' || shuffle) return null;
+    return queue[0] ?? null;
+  }
+
+  private async preloadNext(token: number) {
+    const next = this.upcoming();
+    if (!next || next.id === this.current?.id) return;
+    if (this.preloaded?.item.id === next.id) return;
+    this.dropPreloaded();
+    let item: QueueItem;
+    try {
+      item = await this.playableFor(next);
+    } catch {
+      return; // it'll be tried again, the normal way, when it's its turn
+    }
+    if (token !== this.loadToken || this.upcoming()?.id !== next.id) {
+      this.preloadedFor = -1; // what plays next changed meanwhile: try again
+      return;
+    }
+    this.preloaded = {
+      item,
+      player: this.createPlayer(this.sourceConfig(item)),
+    };
+  }
+
+  /** The preloaded player if it holds `id`; any other preloaded song is thrown away. */
+  private takePreloaded(id: string) {
+    const pre = this.preloaded;
+    this.preloaded = null;
+    if (pre && pre.item.id === id) return pre;
+    if (pre) this.releasePlayer(pre.player);
+    return null;
+  }
+
+  private dropPreloaded() {
+    const pre = this.preloaded;
+    this.preloaded = null;
+    if (pre) this.releasePlayer(pre.player);
+  }
+
+  private releasePlayer(p: VideoPlayer) {
+    try {
+      p.pause();
+      p.release();
+    } catch {}
+  }
+
+  private releaseRetiring() {
+    const r = this.retiring;
+    this.retiring = null;
+    if (r) this.releasePlayer(r);
+  }
+
+  /**
+   * Starts the preloaded player in place of the current one. The playback
+   * service hands the notification over to the new one
+   * (patches/react-native-video+*.patch); the old one is released a moment
+   * later, once that has happened: releasing it straight away would drop the
+   * notification and the background playback with it.
+   */
+  private swapTo(pre: { item: QueueItem; player: VideoPlayer }, index: number) {
+    const old = this.player;
+    const p = pre.player;
+    this.releaseRetiring();
+    if (old) {
+      // Started on time for the end (maybeStartNextOnTime): let the last
+      // moments play out under the new song's start. Skipped to: stop it now.
+      const left = this.progress.duration - this.progress.position;
+      if (!(left > 0 && left < 1)) {
+        try {
+          old.pause();
+        } catch {}
+      }
+      this.retiring = old;
+    }
+    this.player = p;
+    this.activate(p);
+    this.applyLoop();
+    this.play();
+
+    const live = this.state.queue[index];
+    this.showLoaded(
+      { ...pre.item, liked: live?.liked ?? pre.item.liked },
+      index,
+      false,
+    );
+    const d = Number.isFinite(p.duration) ? p.duration : 0;
+    if (d > 0) {
+      this.setProgress({ position: 0, duration: d });
+      this.rememberDuration(d);
+    }
+    this.checkSleep(); // keep fading if the sleep timer is about to stop the music
   }
 
   // ---------- starting playback ----------
@@ -445,6 +670,10 @@ class PlayerServiceImpl {
   play() {
     const p = this.player;
     this.wantsToPlay = true;
+    // Time ran out while paused: don't pause again on the first tick.
+    const sleep = this.state.sleep;
+    if (sleep && 'at' in sleep && sleep.at <= Date.now())
+      this.cancelSleep(true);
     if (!p) {
       this.revive();
       return;
@@ -495,6 +724,7 @@ class PlayerServiceImpl {
     const at = this.progress.position;
     const old = this.player;
     this.player = null;
+    this.releaseRetiring();
     try {
       old?.release();
     } catch {}
@@ -516,6 +746,9 @@ class PlayerServiceImpl {
     saveSettings({ playbackSpeed: speed });
     if (this.player && (Platform.OS !== 'ios' || this.state.isPlaying)) {
       this.player.rate = speed;
+    }
+    if (this.preloaded && Platform.OS !== 'ios') {
+      this.preloaded.player.rate = speed;
     }
   }
 
@@ -594,9 +827,86 @@ class PlayerServiceImpl {
 
   /** Repeat one is done by the native player itself, so it works with the screen off. */
   private applyLoop() {
+    // A native loop never ends the song, so "end of song" for the sleep timer turns it off.
+    const endOfSong = !!this.state.sleep && 'endOfSong' in this.state.sleep;
     try {
-      if (this.player) this.player.loop = this.state.repeat === 'one';
+      if (this.player)
+        this.player.loop = this.state.repeat === 'one' && !endOfSong;
     } catch {}
+  }
+
+  private countIfListened() {
+    const cur = this.current;
+    if (this.counted || !cur || cur.status === 'streaming') return;
+    const { position, duration } = this.progress;
+    if (position >= Math.min(30, duration > 0 ? duration / 2 : 30)) {
+      this.counted = true;
+      countPlay(cur.id).catch(() => {});
+    }
+  }
+
+  // ---------- sleep timer ----------
+
+  /** Pause in `minutes`, or at the end of the current song (`'endOfSong'`). */
+  setSleep(when: number | 'endOfSong') {
+    this.clearSleepTimeout();
+    this.setVolume(1);
+    const sleep: SleepTimer =
+      when === 'endOfSong'
+        ? { endOfSong: true }
+        : { at: Date.now() + when * 60_000 };
+    this.setState({ sleep });
+    this.applyLoop();
+    if ('at' in sleep) {
+      this.sleepTimeout = setTimeout(
+        () => this.checkSleep(),
+        sleep.at - Date.now(),
+      );
+    }
+    toast(
+      when === 'endOfSong'
+        ? 'Music pauses when this song ends'
+        : `Music pauses in ${when} min`,
+    );
+  }
+
+  cancelSleep(silent = false) {
+    if (!this.state.sleep) return;
+    this.clearSleepTimeout();
+    this.setVolume(1);
+    this.setState({ sleep: null });
+    this.applyLoop();
+    if (!silent) toast('Sleep timer off');
+  }
+
+  private clearSleepTimeout() {
+    if (this.sleepTimeout) clearTimeout(this.sleepTimeout);
+    this.sleepTimeout = null;
+  }
+
+  private setVolume(v: number) {
+    try {
+      if (this.player && this.player.volume !== v) this.player.volume = v;
+    } catch {}
+  }
+
+  /**
+   * Fades out, then pauses once the time is up. Called on every progress tick,
+   * which keeps coming with the screen off (JS timers don't).
+   */
+  private checkSleep() {
+    const sleep = this.state.sleep;
+    if (!sleep || !('at' in sleep)) return;
+    const left = (sleep.at - Date.now()) / 1000;
+    if (left <= 0) {
+      const playing = this.state.isPlaying || this.wantsToPlay;
+      if (playing) this.pause();
+      this.cancelSleep(true); // after pausing: it turns the volume back up
+      if (playing) toast('Sleep timer: music paused');
+      return;
+    }
+    if (left < SLEEP_FADE_S)
+      this.setVolume(Math.max(0.05, left / SLEEP_FADE_S));
   }
 
   toggleShuffle() {
@@ -697,6 +1007,9 @@ class PlayerServiceImpl {
   stop() {
     this.wantsToPlay = false;
     this.loadToken++; // ignore any stream still being resolved
+    this.cancelSleep(true);
+    this.dropPreloaded();
+    this.releaseRetiring();
     const p = this.player;
     this.player = null;
     if (p) {
@@ -763,6 +1076,13 @@ class PlayerServiceImpl {
    */
   private onTrackEnded() {
     whileAway(async () => {
+      const sleep = this.state.sleep;
+      if (sleep && 'endOfSong' in sleep) {
+        this.cancelSleep(true);
+        this.pause();
+        this.seekTo(0);
+        return;
+      }
       if (this.state.repeat === 'one') {
         // Normally looped natively (applyLoop); this is the fallback.
         this.seekTo(0);

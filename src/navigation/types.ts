@@ -1,7 +1,9 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { SmartList } from '../services/smartLists';
 
 export type CollectionParams =
   | { kind: 'liked' }
+  | { kind: 'smart'; list: SmartList }
   | { kind: 'genre'; genre: string }
   | { kind: 'playlist'; id: string };
 

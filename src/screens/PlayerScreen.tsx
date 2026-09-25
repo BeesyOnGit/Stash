@@ -16,6 +16,7 @@ import {
   useDownloadProgress,
   usePlayerState,
   useProgress,
+  useSleepLeft,
 } from '../player/hooks';
 import { useOnline } from '../services/network';
 import { haptic, type HapticKind } from '../services/haptics';
@@ -40,6 +41,7 @@ import {
   CloseIcon,
   LyricsIcon,
   HeartIcon,
+  MoonIcon,
   MoreIcon,
   NextIcon,
   PauseIcon,
@@ -87,6 +89,7 @@ export function PlayerScreen() {
   } = useSettings();
   const vinyl = playerArt === 'vinyl';
   const dl = useDownloadProgress(track?.id);
+  const sleepLeft = useSleepLeft();
   const online = useOnline();
   const scale = useRef(new Animated.Value(1)).current;
   const [showLyrics, setShowLyrics] = useState(false);
@@ -135,8 +138,9 @@ export function PlayerScreen() {
     : ink;
 
   const showSave = track.status === 'streaming' && online;
-  // Save offline + Random + speed don't fit next to the full text: keep just the ring.
-  const compactStatus = st.radio && showSave;
+  // Two of Save offline / Random / sleep + speed don't fit next to the full text: keep just the ring.
+  const compactStatus =
+    Number(showSave) + Number(st.radio) + Number(!!sleepLeft) >= 2;
 
   const next =
     st.queue[st.index + 1] ?? (st.repeat === 'all' ? st.queue[0] : null);
@@ -331,6 +335,18 @@ export function PlayerScreen() {
               <SimilarIcon size={15} color={accentOn} />
               <Text style={[font(600, 12), { color: ink }]}>Random</Text>
               <CloseIcon size={8} color={ink} />
+            </Pressable>
+          )}
+          {!!sleepLeft && (
+            <Pressable
+              onPress={() => openSheet({ kind: 'sleep' })}
+              accessibilityLabel={`Sleep timer: ${sleepLeft}`}
+              style={[styles.speedBtn, { backgroundColor: chip }]}
+            >
+              <MoonIcon color={ink} />
+              <Text style={[mono(600, 12), { color: ink }]}>
+                {sleepLeft === 'End of song' ? 'End' : sleepLeft}
+              </Text>
             </Pressable>
           )}
           <Pressable

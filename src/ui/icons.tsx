@@ -182,6 +182,12 @@ export const AddToListIcon = ({ size = 20, color }: P) => (
 );
 
 /** Speedometer (playback speed chip). */
+export const MoonIcon = ({ size = 14, color }: P) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2.2)}>
+    <Path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" />
+  </Svg>
+);
+
 export const SpeedIcon = ({ size = 14, color }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2.4)}>
     <Path d="M4 16a8 8 0 1116 0" />
