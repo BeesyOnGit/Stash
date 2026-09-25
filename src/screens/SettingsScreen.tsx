@@ -233,8 +233,8 @@ export function SettingsScreen() {
           divider
         />
         <Row
-          title="Find album covers"
-          sub="Looks up covers and genres on iTunes"
+          title="Look up song details"
+          sub="Official titles, artists, covers and genres from Deezer and iTunes"
           right={
             <Toggle
               value={s.fetchCoverArt}

@@ -8,6 +8,7 @@ import {
   cleanupInterruptedDownloads,
   onDownloadFinished,
 } from './src/services/downloader';
+import { startDetailsLookup } from './src/services/artwork';
 import { ensureDirs } from './src/services/paths';
 import { startUpdateChecks } from './src/services/updater';
 import { openSheet, toast } from './src/state/ui';
@@ -20,6 +21,12 @@ export default function App() {
       await convertOldDownloads();
       await keepOldDownloads(); // to Music/stash, so they survive an uninstall
     })().catch(e => console.warn('Startup failed', e));
+
+    // Official names, covers and genres for songs that don't have them yet.
+    let stopLookup: (() => void) | null = null;
+    const lookupTimer = setTimeout(() => {
+      stopLookup = startDetailsLookup();
+    }, 5000);
 
     // New version on GitHub? Asked once per start, after the splash has gone.
     const updateTimer = setTimeout(
@@ -37,6 +44,8 @@ export default function App() {
     );
     return () => {
       clearTimeout(updateTimer);
+      clearTimeout(lookupTimer);
+      stopLookup?.();
       stopListening();
     };
   }, []);

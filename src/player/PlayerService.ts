@@ -1092,6 +1092,9 @@ class PlayerServiceImpl {
         if (!fresh) return t;
         if (
           fresh.status === t.status &&
+          fresh.title === t.title &&
+          fresh.artist === t.artist &&
+          fresh.album === t.album &&
           fresh.liked === t.liked &&
           fresh.artworkPath === t.artworkPath &&
           fresh.genre === t.genre &&

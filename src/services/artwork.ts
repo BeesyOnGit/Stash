@@ -1,78 +1,30 @@
 /**
- * Album / single / song cover art.
- * - Online tracks: the source thumbnail, or (for YouTube) a real cover from the iTunes Search API.
- * - Device files: looked up on the iTunes Search API from the title/artist.
- * The image is always saved locally, so covers keep showing offline.
+ * A song's details and cover art, from the music catalogues (services/metadata):
+ * - its official title and artist, instead of the video's or the file's name;
+ * - album and genre;
+ * - a real cover (for YouTube songs and phone files; other sources keep theirs
+ *   unless they have none).
+ * Looked up once per song. The cover is always saved on the phone, so it shows offline.
  */
 import ReactNativeBlobUtil from 'react-native-blob-util';
-import { updateTrack } from '../db/database';
+import {
+  clearDetailChecks,
+  getAllTracks,
+  getSettingSync,
+  getTrack,
+  setSettingSync,
+  updateTrack,
+} from '../db/database';
 import type { Track } from '../types';
-import { getJson } from '../sources/http';
-import { ARTWORK_DIR, safeFileName } from './paths';
+import { LOOKUP_REVISION, lookupArtistPicture, lookupSong } from './metadata';
+import { isOnline, subscribeNetwork } from './network';
+import { ARTWORK_DIR, removeFile, safeFileName } from './paths';
 import { getSettings } from './settings';
 
-interface ItunesSearch {
-  results: Array<{
-    trackName?: string;
-    artistName?: string;
-    collectionName?: string;
-    primaryGenreName?: string;
-    artworkUrl100?: string;
-  }>;
-}
-
-export interface CoverMatch {
-  url: string;
-  album: string | null;
-  artist: string | null;
-  genre: string | null;
-}
-
-const normalize = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-
-/** Finds a 600×600 cover for a song. Returns null when there is no confident match. */
-export async function lookupCover(
-  title: string,
-  artist: string | null,
-): Promise<CoverMatch | null> {
-  const term = [artist, title].filter(Boolean).join(' ');
-  if (!term) return null;
-  try {
-    const data = await getJson<ItunesSearch>(
-      `https://itunes.apple.com/search?media=music&entity=song&limit=5&term=${encodeURIComponent(
-        term,
-      )}`,
-      8000,
-    );
-    const wanted = normalize(title);
-    // Prefer a result whose track name matches, so we don't show some random album.
-    const hit =
-      data.results.find(
-        r => r.trackName && normalize(r.trackName).includes(wanted),
-      ) ??
-      (artist
-        ? data.results.find(
-            r => r.artistName && normalize(r.artistName) === normalize(artist),
-          )
-        : undefined);
-    if (!hit?.artworkUrl100) return null;
-    return {
-      url: hit.artworkUrl100.replace('100x100bb', '600x600bb'),
-      album: hit.collectionName ?? null,
-      genre: hit.primaryGenreName ?? null,
-      artist: hit.artistName ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function saveImage(trackId: string, url: string): Promise<string | null> {
-  const path = `${ARTWORK_DIR}/${safeFileName(trackId)}.jpg`;
+  // A new name each time: the image views cache by path, so a replaced cover
+  // saved under the old name would keep showing the old one.
+  const path = `${ARTWORK_DIR}/${safeFileName(trackId)}-${Date.now()}.jpg`;
   try {
     const res = await ReactNativeBlobUtil.config({ path }).fetch('GET', url);
     if (res.info().status >= 400) {
@@ -86,34 +38,97 @@ async function saveImage(trackId: string, url: string): Promise<string | null> {
 }
 
 /**
- * Makes sure a track has a locally saved cover, and fills in album and genre when found.
- * @param preferLookup use the looked-up cover over the source's (YouTube thumbnails are video frames)
+ * Looks the song up (once) and saves its cover on the phone.
+ * @param preferLookup use the catalogue's cover over the source's (YouTube thumbnails are video frames)
  */
 export async function ensureArtwork(
   track: Track,
   preferLookup: boolean,
 ): Promise<void> {
-  if (track.artworkPath && track.genre) return;
   const { fetchCoverArt } = getSettings();
+  const lookUp = fetchCoverArt && !track.metaCheckedAt && isOnline();
+  if (!lookUp && track.artworkPath) return;
 
+  let { title, artist, album, genre } = track;
+  // Always matched from what the song came with, so a wrong lookup can be undone.
+  const sourceTitle = track.sourceTitle ?? track.title;
+  const sourceArtist = track.sourceTitle ? track.sourceArtist : track.artist;
   let url = track.remoteArtworkUrl;
-  let album = track.album;
-  let genre = track.genre;
-  if (fetchCoverArt) {
-    const match = await lookupCover(track.title, track.artist);
-    if (match) {
-      if (preferLookup || !url) url = match.url;
-      album = album ?? match.album;
-      genre = genre ?? match.genre;
+  let newCover = false;
+  if (lookUp) {
+    title = sourceTitle;
+    artist = sourceArtist ?? null;
+    const found = await lookupSong(sourceTitle, sourceArtist ?? null);
+    if (found) {
+      title = found.title;
+      artist = found.artist;
+      album = found.album ?? album;
+      genre = found.genre ?? genre;
+    }
+    // No cover from the catalogues: the artist's picture rather than a video frame.
+    const cover =
+      found?.coverUrl ??
+      (preferLookup
+        ? await lookupArtistPicture(
+            found?.title ?? title,
+            found?.artist ?? artist,
+          )
+        : null);
+    if (cover && (preferLookup || !url)) {
+      newCover = cover !== url;
+      url = cover;
     }
   }
 
-  const artworkPath =
-    track.artworkPath ?? (url ? await saveImage(track.id, url) : null);
+  let artworkPath = track.artworkPath;
+  if (url && (!artworkPath || newCover)) {
+    const saved = await saveImage(track.id, url);
+    if (saved) {
+      if (artworkPath) await removeFile(artworkPath).catch(() => {});
+      artworkPath = saved;
+    }
+  }
   await updateTrack(track.id, {
-    artworkPath,
-    remoteArtworkUrl: url,
+    title,
+    artist,
     album,
     genre,
+    artworkPath,
+    remoteArtworkUrl: url,
+    ...(lookUp ? { metaCheckedAt: Date.now(), sourceTitle, sourceArtist } : {}),
+  });
+}
+
+let tidying = false;
+
+/**
+ * Songs saved before this existed (or while offline) get their details looked
+ * up in the background, one at a time; again whenever the connection comes back.
+ */
+export function startDetailsLookup() {
+  const run = async () => {
+    if (tidying || !isOnline() || !getSettings().fetchCoverArt) return;
+    tidying = true;
+    try {
+      if (Number(getSettingSync('lookupRevision') ?? 0) < LOOKUP_REVISION) {
+        await clearDetailChecks();
+        setSettingSync('lookupRevision', String(LOOKUP_REVISION));
+      }
+      const todo = (await getAllTracks()).filter(
+        t => t.status === 'ready' && !t.metaCheckedAt,
+      );
+      for (const t of todo) {
+        if (!isOnline()) break;
+        const fresh = await getTrack(t.id);
+        if (fresh && !fresh.metaCheckedAt)
+          await ensureArtwork(fresh, fresh.source !== 'jamendo');
+      }
+    } finally {
+      tidying = false;
+    }
+  };
+  run().catch(() => {});
+  return subscribeNetwork(() => {
+    run().catch(() => {});
   });
 }

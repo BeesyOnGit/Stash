@@ -9,6 +9,8 @@ later on GitHub (Releases → Edit) without rebuilding.
 
 ## 1.1.5
 
+- **Official song names and covers:** songs are looked up on Deezer and iTunes, so they get their real title and artist (not "Artist - Title (Clip Officiel)" from the video, or the uploader's channel name), the album, the genre and the album cover instead of a video frame. A song is only renamed when it's clearly the same recording: instrumentals, covers, remixes and live versions keep their own names. Songs no catalogue has get the artist's picture as a cover. Songs already in the library are updated in the background. Can be turned off in Settings → Look up song details.
+- **Song change animation:** on Next and Previous, the background, cover, title and waveform slide over like a page, the new song coming in from its side (right for Next, left for Previous). The buttons stay in place.
 - **No more pause between songs:** the next song is loaded 15 seconds before the current one ends and starts right as it finishes, with the screen off too. Online songs no longer wait to connect when their turn comes (Android).
 - **Sleep timer:** pause the music in 15, 30, 45, 60 or 90 minutes, or at the end of the song. The last 30 seconds fade out, and it works with the screen off. Set it from the song's ••• menu in the player; a moon chip shows the time left.
 - **Previous and next on the lock screen and notification**, instead of skipping back and forward 10 seconds (Android).

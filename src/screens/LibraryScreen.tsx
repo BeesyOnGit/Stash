@@ -349,8 +349,8 @@ export function LibraryScreen() {
         <View style={styles.genreGrid}>
           {!genres.length && (
             <Note style={styles.fullWidth}>
-              Genres appear once covers are found for your songs (Settings →
-              Find album covers).
+              Genres appear once your songs have been looked up online (Settings
+              → Look up song details).
             </Note>
           )}
           {genres.map(g => (

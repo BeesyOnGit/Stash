@@ -29,6 +29,9 @@ const MIGRATIONS: Array<[string, string]> = [
   ['last_played_at', 'INTEGER'],
   ['waveform', 'TEXT'],
   ['play_count', 'INTEGER NOT NULL DEFAULT 0'],
+  ['meta_checked_at', 'INTEGER'],
+  ['source_title', 'TEXT'],
+  ['source_artist', 'TEXT'],
 ];
 const existing = new Set(
   db.executeSync('PRAGMA table_info(tracks)').rows.map(r => r.name as string),
@@ -96,6 +99,9 @@ const toTrack = (r: Row): Track => ({
   savedAt: (r.saved_at as number) ?? null,
   lastPlayedAt: (r.last_played_at as number) ?? null,
   playCount: (r.play_count as number) ?? 0,
+  metaCheckedAt: (r.meta_checked_at as number) ?? null,
+  sourceTitle: (r.source_title as string) ?? null,
+  sourceArtist: (r.source_artist as string) ?? null,
   waveform: r.waveform ? (r.waveform as string).split(',').map(Number) : null,
 });
 
@@ -200,6 +206,9 @@ const COLUMNS: Record<string, string> = {
   savedAt: 'saved_at',
   lastPlayedAt: 'last_played_at',
   waveform: 'waveform',
+  metaCheckedAt: 'meta_checked_at',
+  sourceTitle: 'source_title',
+  sourceArtist: 'source_artist',
 };
 
 export async function updateTrack(
@@ -232,6 +241,11 @@ export async function countPlay(id: string): Promise<void> {
     [id],
   );
   notify();
+}
+
+/** Every song's details get looked up again (a better lookup came). */
+export async function clearDetailChecks(): Promise<void> {
+  await db.execute('UPDATE tracks SET meta_checked_at = NULL');
 }
 
 export async function deleteTrackRow(id: string): Promise<void> {

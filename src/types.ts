@@ -37,6 +37,11 @@ export interface Track {
   lastPlayedAt: number | null;
   /** Times listened past the first 30 s (or half of a short song). */
   playCount?: number;
+  /** When its details were looked up in the music catalogues (see services/metadata). */
+  metaCheckedAt?: number | null;
+  /** The title and artist the song came with, before the lookup renamed it. */
+  sourceTitle?: string | null;
+  sourceArtist?: string | null;
 }
 
 /** A song found on an online platform (not necessarily in the library). */

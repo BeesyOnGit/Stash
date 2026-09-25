@@ -15,7 +15,7 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 - Liked songs, playlists and genres. Phone music is added when you ask: Settings → This phone → Scan for music.
 - Automatic playlists: Recently added, Most played and Downloaded.
 - Long-press a song to select several, then play, add to a playlist, like or remove them together.
-- Cover art and genres looked up automatically and stored on the phone.
+- Official titles, artists, albums, genres and covers looked up automatically (Deezer, then iTunes) and stored on the phone; instrumentals, covers and remixes keep their own names.
 
 **Search and saving**
 - Search looks in your library first, then online sources.
@@ -151,7 +151,7 @@ FFmpeg is licensed under the GNU Lesser General Public License, version 2.1 or l
 **Services**
 
 - Lyrics from [LRCLIB](https://lrclib.net), a free, community-built lyrics database.
-- Cover art and genres from the [iTunes Search API](https://performance-partners.apple.com/search-api).
+- Song names, albums, genres and cover art from the [Deezer API](https://developers.deezer.com/api) and the [iTunes Search API](https://performance-partners.apple.com/search-api).
 - Creative Commons music from [Jamendo](https://www.jamendo.com) (optional).
 
 Development tools: TypeScript, Babel, Jest, ESLint and Prettier (all MIT or Apache-2.0).

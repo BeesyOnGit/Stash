@@ -13,7 +13,7 @@ export interface Settings {
   youtubeInstance: string;
   /** Free key from https://devportal.jamendo.com — leave empty to disable Jamendo. */
   jamendoClientId: string;
-  /** Look up album covers (and genre) on the iTunes Search API. */
+  /** Look up songs' official details and covers (services/metadata). */
   fetchCoverArt: boolean;
   /** Keep songs found online after the first play. */
   saveWhileStreaming: boolean;
