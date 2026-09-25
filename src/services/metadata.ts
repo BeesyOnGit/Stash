@@ -214,7 +214,7 @@ function bestCase(name: string, others: Array<string | null | undefined>) {
 /**
  * Bump when the lookup gets better: songs checked with an older one are looked up again.
  */
-export const LOOKUP_REVISION = 3;
+export const LOOKUP_REVISION = 4;
 
 /**
  * What to type in a catalogue's search box: the title up to the first bracket,
@@ -309,8 +309,11 @@ export async function lookupArtistPicture(
         )}`,
         8000,
       );
-      const hit = (res.data ?? []).find(a =>
-        artistFits({ title, artist }, a.name),
+      // The whole name must fit: "Schubert & Friends" isn't Schubert.
+      const hit = (res.data ?? []).find(
+        a =>
+          !/[,&+]| x | feat\.? | and /i.test(a.name) &&
+          artistFits({ title, artist }, a.name),
       );
       const url = hit?.picture_xl ?? hit?.picture_big;
       // Deezer's stand-in for artists without a photo is a grey silhouette.

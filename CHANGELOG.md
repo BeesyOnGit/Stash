@@ -7,6 +7,13 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.1.6
+
+- **Choose the song change animation:** Slide (the page swipes toward the next or previous song), Fade (the song fades out, then the next one fades in), Zoom (the song shrinks away and the next one settles in) or Flip (cover, title and waveform flip over like a card). Settings → Appearance → Song change.
+- **Screen stays on in the player:** the screen doesn't turn off while the full player is open. It can be turned off in Settings → Appearance (Android).
+- **Tidier player:** the chips under the title (song status, Save offline, Random, sleep timer) show their full text when there's room. When the row gets crowded they shrink to icons one at a time, in that order.
+- **Crossfade:** each song can fade into the next over 2 to 12 seconds (Settings → Listening → Crossfade; off by default). It works with the screen off, and skipping or pausing ends it cleanly (Android).
+
 ## 1.1.5
 
 - **Official song names and covers:** songs are looked up on Deezer and iTunes, so they get their real title and artist (not "Artist - Title (Clip Officiel)" from the video, or the uploader's channel name), the album, the genre and the album cover instead of a video frame. A song is only renamed when it's clearly the same recording: instrumentals, covers, remixes and live versions keep their own names. Songs no catalogue has get the artist's picture as a cover. Songs already in the library are updated in the background. Can be turned off in Settings → Look up song details.

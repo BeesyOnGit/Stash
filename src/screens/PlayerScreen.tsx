@@ -8,6 +8,7 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -24,7 +25,13 @@ import {
 } from '../player/hooks';
 import { useOnline } from '../services/network';
 import { haptic, type HapticKind } from '../services/haptics';
-import { speedLabel, useSettings, type VinylStyle } from '../services/settings';
+import {
+  speedLabel,
+  useSettings,
+  type SongChange,
+  type VinylStyle,
+} from '../services/settings';
+import { keepScreenOn } from '../services/screen';
 import { WAVEFORM_BARS } from '../services/waveform';
 import { openSheet } from '../state/ui';
 import {
@@ -43,6 +50,7 @@ import {
   AddToListIcon,
   ChevronDownIcon,
   CloseIcon,
+  DownloadIcon,
   LyricsIcon,
   HeartIcon,
   MoonIcon,
@@ -81,6 +89,99 @@ function withContrast(bars: number[]): number[] {
 const CHANGE_MS = 460;
 /** Cross-fade (no direction): where in the change (0..1) the old ones are gone and the new ones start. */
 const SPLIT = 0.4;
+
+type ChipKey = 'status' | 'save' | 'random' | 'sleep' | 'speed';
+const CHIP_KEYS: ChipKey[] = ['status', 'save', 'random', 'sleep', 'speed'];
+/** Which chips give up their text first when the status row is crowded. */
+const SHRINK_ORDER = ['status', 'save', 'random', 'sleep'] as const;
+type Minimised = Record<(typeof SHRINK_ORDER)[number], boolean>;
+const FULL: Minimised = {
+  status: false,
+  save: false,
+  random: false,
+  sleep: false,
+};
+/** A chip shrunk to its icon (the status: its ring). */
+const SMALL_CHIP = 32;
+const CHIP_GAP = 8;
+
+type Styled = Animated.WithAnimatedValue<ViewStyle> | null;
+
+/**
+ * How the new song comes in and the old one leaves, from `t` (0 → 1 over the
+ * change). `in`/`out` go on the cover, title, status and waveform; `bg*` on
+ * the backgrounds (which cross-fade, except when sliding with the page).
+ */
+function songChangeStyles(
+  mode: SongChange,
+  dir: MoveDir,
+  t: Animated.Value,
+  width: number,
+): { inStyle: Styled; outStyle: Styled; bgIn: Styled; bgOut: Styled } {
+  const range = (inputRange: number[], outputRange: number[] | string[]) =>
+    t.interpolate({ inputRange, outputRange, extrapolate: 'clamp' } as any);
+  const fadeIn = range([0, SPLIT, 1], [0, 0, 1]);
+  const fadeOut = range([0, SPLIT], [1, 0]);
+  const crossfade = { opacity: range([0, 1], [1, 0]) };
+
+  if (mode === 'slide' && dir) {
+    const inStyle = {
+      transform: [{ translateX: range([0, 1], [dir * width, 0]) }],
+    };
+    const outStyle = {
+      transform: [{ translateX: range([0, 1], [0, -dir * width]) }],
+    };
+    return { inStyle, outStyle, bgIn: inStyle, bgOut: outStyle };
+  }
+  if (mode === 'zoom') {
+    return {
+      inStyle: {
+        opacity: fadeIn,
+        transform: [{ scale: range([0, SPLIT, 1], [1.12, 1.12, 1]) }],
+      },
+      outStyle: {
+        opacity: fadeOut,
+        transform: [{ scale: range([0, SPLIT], [1, 0.82]) }],
+      },
+      bgIn: null,
+      bgOut: crossfade,
+    };
+  }
+  if (mode === 'flip') {
+    // Turns away from the side of the song coming in (as Next / Previous go).
+    const d = dir || 1;
+    return {
+      inStyle: {
+        opacity: range([0, 0.5, 0.501, 1], [0, 0, 1, 1]),
+        transform: [
+          { perspective: 900 },
+          {
+            rotateY: range(
+              [0, 0.5, 1],
+              [`${-d * 90}deg`, `${-d * 90}deg`, '0deg'],
+            ),
+          },
+        ],
+      },
+      outStyle: {
+        opacity: range([0, 0.499, 0.5], [1, 1, 0]),
+        transform: [
+          { perspective: 900 },
+          { rotateY: range([0, 0.5], ['0deg', `${d * 90}deg`]) },
+        ],
+      },
+      bgIn: null,
+      bgOut: crossfade,
+    };
+  }
+  // Fade (and a slide with no direction: a new list).
+  return {
+    inStyle: { opacity: fadeIn },
+    outStyle: { opacity: fadeOut },
+    bgIn: null,
+    bgOut: crossfade,
+  };
+}
 
 /** `t` when no change is running: everything shown as it is. */
 const SETTLED = new Animated.Value(1);
@@ -177,6 +278,8 @@ export function PlayerScreen() {
     playerArt,
     rotateArt,
     vinylStyle,
+    songChange,
+    keepScreenOn: keepOn,
   } = useSettings();
   const vinyl = playerArt === 'vinyl';
   const dl = useDownloadProgress(track?.id);
@@ -184,6 +287,17 @@ export function PlayerScreen() {
   const online = useOnline();
   const scale = useRef(new Animated.Value(1)).current;
   const [showLyrics, setShowLyrics] = useState(false);
+
+  // The screen stays on while the full player is open (Settings → Appearance).
+  useEffect(() => {
+    if (!keepOn) return;
+    keepScreenOn(true);
+    return () => keepScreenOn(false);
+  }, [keepOn]);
+  const [statusWidth, setStatusWidth] = useState(0);
+  const [chipWidths, setChipWidths] = useState<
+    Partial<Record<ChipKey, number>>
+  >({});
 
   useEffect(() => {
     Animated.timing(scale, {
@@ -202,45 +316,12 @@ export function PlayerScreen() {
   const chip = deep ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.6)';
   const solid = deep ? P.deep : P.soft;
   const accentOn = deep ? P.accent : P.deep2;
-  // Next / Previous: the background, cover, title and waveform swipe like a
-  // page, the new song coming in from its side (right for Next, left for
-  // Previous). A new list has no side: they cross-fade instead.
-  const dir = lv?.dir ?? 0;
-  const inStyle = dir
-    ? {
-        transform: [
-          {
-            translateX: t.interpolate({
-              inputRange: [0, 1],
-              outputRange: [dir * width, 0],
-            }),
-          },
-        ],
-      }
-    : {
-        opacity: t.interpolate({
-          inputRange: [0, SPLIT, 1],
-          outputRange: [0, 0, 1],
-        }),
-      };
-  const outStyle = dir
-    ? {
-        transform: [
-          {
-            translateX: t.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, -dir * width],
-            }),
-          },
-        ],
-      }
-    : {
-        opacity: t.interpolate({
-          inputRange: [0, SPLIT],
-          outputRange: [1, 0],
-          extrapolate: 'clamp',
-        }),
-      };
+  const { inStyle, outStyle, bgIn, bgOut } = songChangeStyles(
+    songChange,
+    lv?.dir ?? 0,
+    t,
+    width,
+  );
   const oldInk = lv && (deep ? '#fff' : paletteFor(lv.track).softInk);
   const artSize = Math.min(300, width - 48, height * 0.36);
 
@@ -280,11 +361,152 @@ export function PlayerScreen() {
           ? '#FF9A76'
           : ACCENT
         : inkT,
-      // Two of Save offline / Random / sleep + speed don't fit next to the full text: keep just the ring.
-      compact: Number(showSaveT) + Number(st.radio) + Number(!!sleepLeft) >= 2,
     };
   };
-  const { local, buffered } = songInfo(track, false);
+
+  /**
+   * The status row's chips. Crowded, they shrink one by one, in this order:
+   * the status text to just its ring, then Save offline, Random and the sleep
+   * timer to their icons. `measure` wraps each full-size chip, to know its width.
+   */
+  const statusChips = (
+    i: ReturnType<typeof songInfo>,
+    small: Minimised,
+    measure?: (key: ChipKey, chip: React.ReactNode) => React.ReactNode,
+  ) => {
+    const m = measure ?? ((_: ChipKey, chip: React.ReactNode) => chip);
+    return (
+      <>
+        {m(
+          'status',
+          <View
+            accessible
+            accessibilityLabel={i.status}
+            style={[
+              styles.statusChip,
+              small.status && styles.statusChipCompact,
+              { backgroundColor: chip },
+            ]}
+          >
+            <RingIcon
+              color={i.ring}
+              track={deep ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}
+              progress={i.buffered}
+            />
+            {!small.status && (
+              <Text numberOfLines={1} style={[font(500, 12), { color: i.ink }]}>
+                {i.status}
+              </Text>
+            )}
+          </View>,
+        )}
+        {i.showSave &&
+          m(
+            'save',
+            <Pressable
+              onPress={() => PlayerService.saveOffline(live)}
+              accessibilityLabel="Save offline"
+              hitSlop={6}
+              style={[
+                small.save ? styles.iconChip : styles.saveBtn,
+                { backgroundColor: i.ink },
+              ]}
+            >
+              <DownloadIcon size={15} color={i.solid} strokeWidth={2.6} />
+              {!small.save && (
+                <Text style={[font(600, 12), { color: i.solid }]}>
+                  Save offline
+                </Text>
+              )}
+            </Pressable>,
+          )}
+        {st.radio &&
+          m(
+            'random',
+            <Pressable
+              onPress={() => PlayerService.stopRadio()}
+              accessibilityLabel="Random suggestions on. Tap to turn off"
+              hitSlop={6}
+              style={[
+                small.random ? styles.iconChip : styles.radioChip,
+                { backgroundColor: chip },
+              ]}
+            >
+              <SimilarIcon size={small.random ? 16 : 15} color={i.accentOn} />
+              {!small.random && (
+                <>
+                  <Text style={[font(600, 12), { color: i.ink }]}>Random</Text>
+                  <CloseIcon size={8} color={i.ink} />
+                </>
+              )}
+            </Pressable>,
+          )}
+        {!!sleepLeft &&
+          m(
+            'sleep',
+            <Pressable
+              onPress={() => openSheet({ kind: 'sleep' })}
+              accessibilityLabel={`Sleep timer: ${sleepLeft}`}
+              hitSlop={6}
+              style={[
+                small.sleep ? styles.iconChip : styles.chipRow,
+                { backgroundColor: chip },
+              ]}
+            >
+              <MoonIcon color={i.ink} />
+              {!small.sleep && (
+                <Text style={[mono(600, 12), { color: i.ink }]}>
+                  {sleepLeft === 'End of song' ? 'End' : sleepLeft}
+                </Text>
+              )}
+            </Pressable>,
+          )}
+        {m(
+          'speed',
+          <Pressable
+            onPress={() => openSheet({ kind: 'speed' })}
+            accessibilityLabel="Playback speed"
+            style={[styles.speedBtn, { backgroundColor: chip }]}
+          >
+            <SpeedIcon color={i.ink} />
+            <Text style={[mono(600, 12), { color: i.ink }]}>
+              {speedLabel(playbackSpeed)}
+            </Text>
+          </Pressable>,
+        )}
+      </>
+    );
+  };
+
+  // How many chips must shrink for the row to fit (widths measured at full size).
+  const liveInfo = songInfo(track, false);
+  const present: Record<ChipKey, boolean> = {
+    status: true,
+    save: liveInfo.showSave,
+    random: st.radio,
+    sleep: !!sleepLeft,
+    speed: true,
+  };
+  const fitsWith = (shrunk: number) => {
+    let total = 0;
+    let count = 0;
+    for (const k of CHIP_KEYS) {
+      if (!present[k]) continue;
+      const order = SHRINK_ORDER.indexOf(k as (typeof SHRINK_ORDER)[number]);
+      total += order >= 0 && order < shrunk ? SMALL_CHIP : chipWidths[k] ?? 0;
+      count++;
+    }
+    return total + CHIP_GAP * (count - 1) <= statusWidth;
+  };
+  let shrunk = 0;
+  if (statusWidth > 0)
+    while (shrunk < SHRINK_ORDER.length && !fitsWith(shrunk)) shrunk++;
+  const mini: Minimised = {
+    status: shrunk >= 1,
+    save: shrunk >= 2,
+    random: shrunk >= 3,
+    sleep: shrunk >= 4,
+  };
 
   /** The title row (with Like) and the status row: they swipe with the song. */
   const details = (tr: QueueItem, leavingSong: boolean) => {
@@ -309,73 +531,10 @@ export function PlayerScreen() {
           </RoundBtn>
         </>
       ),
-      status: (
-        <>
-          <View
-            accessible
-            accessibilityLabel={i.status}
-            style={[
-              styles.statusChip,
-              i.compact && styles.statusChipCompact,
-              { backgroundColor: chip },
-            ]}
-          >
-            <RingIcon
-              color={i.ring}
-              track={deep ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)'}
-              progress={i.buffered}
-            />
-            {!i.compact && (
-              <Text style={[font(500, 12), { color: i.ink }]}>{i.status}</Text>
-            )}
-          </View>
-          {i.showSave && (
-            <Pressable
-              onPress={() => PlayerService.saveOffline(live)}
-              style={[styles.saveBtn, { backgroundColor: i.ink }]}
-            >
-              <Text style={[font(600, 12), { color: i.solid }]}>
-                Save offline
-              </Text>
-            </Pressable>
-          )}
-          {st.radio && (
-            <Pressable
-              onPress={() => PlayerService.stopRadio()}
-              accessibilityLabel="Random suggestions on. Tap to turn off"
-              style={[styles.radioChip, { backgroundColor: chip }]}
-            >
-              <SimilarIcon size={15} color={i.accentOn} />
-              <Text style={[font(600, 12), { color: i.ink }]}>Random</Text>
-              <CloseIcon size={8} color={i.ink} />
-            </Pressable>
-          )}
-          {!!sleepLeft && (
-            <Pressable
-              onPress={() => openSheet({ kind: 'sleep' })}
-              accessibilityLabel={`Sleep timer: ${sleepLeft}`}
-              style={[styles.speedBtn, { backgroundColor: chip }]}
-            >
-              <MoonIcon color={i.ink} />
-              <Text style={[mono(600, 12), { color: i.ink }]}>
-                {sleepLeft === 'End of song' ? 'End' : sleepLeft}
-              </Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => openSheet({ kind: 'speed' })}
-            accessibilityLabel="Playback speed"
-            style={[styles.speedBtn, { backgroundColor: chip }]}
-          >
-            <SpeedIcon color={i.ink} />
-            <Text style={[mono(600, 12), { color: i.ink }]}>
-              {speedLabel(playbackSpeed)}
-            </Text>
-          </Pressable>
-        </>
-      ),
+      status: statusChips(i, mini),
     };
   };
+  const { local, buffered } = liveInfo;
   const shown = details(track, false);
   const gone = lv && details(lv.track, true);
 
@@ -389,24 +548,14 @@ export function PlayerScreen() {
     <View style={styles.fill}>
       <Animated.View
         pointerEvents="none"
-        style={[StyleSheet.absoluteFill, dir ? inStyle : null]}
+        style={[StyleSheet.absoluteFill, bgIn]}
       >
         <Backdrop track={live} deep={deep} />
       </Animated.View>
       {!!lv && (
         <Animated.View
           pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            dir
-              ? outStyle
-              : {
-                  opacity: t.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 0],
-                  }),
-                },
-          ]}
+          style={[StyleSheet.absoluteFill, bgOut]}
         >
           <Backdrop track={lv.track} deep={deep} />
         </Animated.View>
@@ -499,7 +648,23 @@ export function PlayerScreen() {
           )}
         </View>
 
-        <View style={styles.statusWrap}>
+        <View
+          style={styles.statusWrap}
+          onLayout={e => setStatusWidth(e.nativeEvent.layout.width)}
+        >
+          <View pointerEvents="none" style={styles.measure}>
+            {statusChips(liveInfo, FULL, (key, c) => (
+              <View
+                key={key}
+                onLayout={e => {
+                  const w = Math.ceil(e.nativeEvent.layout.width);
+                  setChipWidths(p => (p[key] === w ? p : { ...p, [key]: w }));
+                }}
+              >
+                {c}
+              </View>
+            ))}
+          </View>
           <Animated.View style={[styles.statusRow, inStyle]}>
             {shown.status}
           </Animated.View>
@@ -1092,7 +1257,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   statusChipCompact: { paddingRight: 7 },
-  saveBtn: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
   radioChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1101,6 +1273,30 @@ const styles = StyleSheet.create({
     paddingRight: 11,
     paddingVertical: 6,
     borderRadius: 999,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingLeft: 9,
+    paddingRight: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  // Full-size copies of the status chips, laid out only to be measured.
+  measure: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    flexDirection: 'row',
+    opacity: 0,
+  },
+  iconChip: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   speedBtn: {
     marginLeft: 'auto',

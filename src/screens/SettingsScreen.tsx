@@ -15,16 +15,19 @@ import { goToTab } from '../navigation/ref';
 import { useCurrentTrack, useLibrary } from '../player/hooks';
 import { scanDeviceMusic } from '../services/deviceScanner';
 import {
+  CROSSFADES,
   saveSettings,
   speedLabel,
   useSettings,
   type RingColor,
+  type SongChange,
   type VinylStyle,
   type YoutubeBackend,
 } from '../services/settings';
 import { openSheet, toast } from '../state/ui';
 import { useOnline } from '../services/network';
 import { hapticsSupported } from '../services/haptics';
+import { keepScreenOnSupported } from '../services/screen';
 import { formatBytes } from '../services/storage';
 import {
   checkForUpdate,
@@ -57,6 +60,13 @@ const RING_COLORS: { value: RingColor; label: string; color: string }[] = [
   { value: 'green', label: 'Green', color: GREEN_LIGHT },
   { value: 'blue', label: 'Blue', color: '#5B9BE6' },
 ];
+
+const SONG_CHANGE_HINTS: Record<SongChange, string> = {
+  slide: 'The page swipes toward the next or previous song',
+  fade: 'The song fades out, then the next one fades in',
+  zoom: 'The song shrinks away and the next one settles in',
+  flip: 'Cover, title and waveform flip over like a card',
+};
 
 export function SettingsScreen() {
   const t = useTheme();
@@ -274,6 +284,31 @@ export function SettingsScreen() {
             </Pressable>
           }
         />
+        {Platform.OS === 'android' && (
+          <View
+            style={[
+              styles.block,
+              { borderBottomWidth: 1, borderBottomColor: t.line },
+            ]}
+          >
+            <Text style={[font(500, 15), { color: t.ink }]}>Crossfade</Text>
+            <Text style={[font(400, 12, 1.4), styles.mt2, { color: t.muted }]}>
+              {s.crossfadeSeconds
+                ? `Each song fades into the next over ${s.crossfadeSeconds} seconds`
+                : 'Off · songs follow each other with no gap'}
+            </Text>
+            <View style={styles.presets}>
+              {CROSSFADES.map(v => (
+                <Chip
+                  key={v}
+                  label={v ? `${v} s` : 'Off'}
+                  on={s.crossfadeSeconds === v}
+                  onPress={() => saveSettings({ crossfadeSeconds: v })}
+                />
+              ))}
+            </View>
+          </View>
+        )}
         {bubbleSupported() && (
           <Row
             title="Floating bubble"
@@ -431,7 +466,7 @@ export function SettingsScreen() {
         <Row
           title="Player background"
           sub="Tinted from each song’s colours"
-          divider={hapticsSupported()}
+          divider
           right={
             <Segmented
               compact
@@ -445,6 +480,42 @@ export function SettingsScreen() {
             />
           }
         />
+        <View
+          style={[
+            styles.block,
+            { borderBottomWidth: 1, borderBottomColor: t.line },
+          ]}
+        >
+          <Text style={[font(500, 15), { color: t.ink }]}>Song change</Text>
+          <Text style={[font(400, 12, 1.4), styles.mt2, { color: t.muted }]}>
+            {SONG_CHANGE_HINTS[s.songChange]}
+          </Text>
+          <View style={styles.mt10}>
+            <Segmented
+              value={s.songChange}
+              onChange={songChange => saveSettings({ songChange })}
+              options={[
+                { value: 'slide', label: 'Slide' },
+                { value: 'fade', label: 'Fade' },
+                { value: 'zoom', label: 'Zoom' },
+                { value: 'flip', label: 'Flip' },
+              ]}
+            />
+          </View>
+        </View>
+        {keepScreenOnSupported() && (
+          <Row
+            title="Keep screen on in the player"
+            sub="The screen doesn’t turn off while the full player is open"
+            divider={hapticsSupported()}
+            right={
+              <Toggle
+                value={s.keepScreenOn}
+                onChange={v => saveSettings({ keepScreenOn: v })}
+              />
+            }
+          />
+        )}
         {hapticsSupported() && (
           <Row
             title="Haptic feedback"

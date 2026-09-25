@@ -37,6 +37,14 @@ async function saveImage(trackId: string, url: string): Promise<string | null> {
   }
 }
 
+/** The cover the song came with: its video's thumbnail, Jamendo's own; none for phone files. */
+function originalCover(track: Track): string | null {
+  if (track.source === 'youtube')
+    return `https://i.ytimg.com/vi/${track.sourceId}/hqdefault.jpg`;
+  if (track.source === 'jamendo') return track.remoteArtworkUrl;
+  return null;
+}
+
 /**
  * Looks the song up (once) and saves its cover on the phone.
  * @param preferLookup use the catalogue's cover over the source's (YouTube thumbnails are video frames)
@@ -55,9 +63,16 @@ export async function ensureArtwork(
   const sourceArtist = track.sourceTitle ? track.sourceArtist : track.artist;
   let url = track.remoteArtworkUrl;
   let newCover = false;
+  let artworkPath = track.artworkPath;
   if (lookUp) {
+    // Start again from what the song came with: an earlier, wrong match is undone
+    // even when nothing is found this time.
     title = sourceTitle;
     artist = sourceArtist ?? null;
+    if (track.source !== 'jamendo') {
+      album = null;
+      genre = null;
+    }
     const found = await lookupSong(sourceTitle, sourceArtist ?? null);
     if (found) {
       title = found.title;
@@ -74,13 +89,15 @@ export async function ensureArtwork(
             found?.artist ?? artist,
           )
         : null);
-    if (cover && (preferLookup || !url)) {
-      newCover = cover !== url;
-      url = cover;
+    const next = preferLookup ? cover ?? originalCover(track) : url ?? cover;
+    newCover = next !== url;
+    url = next;
+    if (!url && artworkPath) {
+      await removeFile(artworkPath).catch(() => {});
+      artworkPath = null;
     }
   }
 
-  let artworkPath = track.artworkPath;
   if (url && (!artworkPath || newCover)) {
     const saved = await saveImage(track.id, url);
     if (saved) {

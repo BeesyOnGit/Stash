@@ -10,6 +10,7 @@ import com.musicapp.audio.AudioPackage
 import com.musicapp.bubble.BubblePackage
 import com.musicapp.car.CarPackage
 import com.musicapp.car.CarState
+import com.musicapp.display.ScreenPackage
 import com.twg.video.core.services.playback.CustomMediaNotificationProvider
 import com.musicapp.haptics.HapticsPackage
 import com.musicapp.update.UpdaterPackage
@@ -26,6 +27,7 @@ class MainApplication : Application(), ReactApplication {
           add(HapticsPackage()) // button haptics (src/services/haptics.ts)
           add(AudioPackage()) // downloads → M4A (src/services/convert.ts)
           add(UpdaterPackage()) // updates from GitHub Releases (src/services/updater.ts)
+          add(ScreenPackage()) // screen kept on in the player (src/services/screen.ts)
         },
     )
   }

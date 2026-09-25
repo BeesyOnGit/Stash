@@ -22,8 +22,14 @@ export interface Settings {
   theme: 'light' | 'dark';
   /** Full-screen player: dark tinted ("deep") or pastel ("light"). */
   playerStyle: 'deep' | 'light';
+  /** How the player animates from one song to the next. */
+  songChange: SongChange;
+  /** Android: the screen doesn't turn off while the full player is open. */
+  keepScreenOn: boolean;
   /** Playback speed for everything you play (pitch stays the same). */
   playbackSpeed: number;
+  /** Android: seconds each song fades into the next (0 = off: back to back, no gap). */
+  crossfadeSeconds: number;
   /** Adds a Similar button to the player (and "For you" in the car). */
   suggestSimilar: boolean;
   /** Android: a floating bubble over other apps while stash plays in the background. */
@@ -44,11 +50,21 @@ export interface Settings {
 
 export type HapticStrength = 'light' | 'medium' | 'strong';
 
+/**
+ * - `slide`: the page swipes toward the next / previous song
+ * - `fade`: the old song fades out, then the new one fades in
+ * - `zoom`: the old song shrinks away, the new one settles in
+ * - `flip`: cover, title and waveform flip over like a card
+ */
+export type SongChange = 'slide' | 'fade' | 'zoom' | 'flip';
+
 export type RingColor = 'white' | 'orange' | 'cover' | 'green' | 'blue';
 export type VinylStyle = 'classic' | 'colour' | 'picture' | 'clear';
 
 export const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export const speedLabel = (v: number) => `${v}×`;
+
+export const CROSSFADES = [0, 2, 4, 6, 8, 12];
 
 const VERSION = 2;
 
@@ -62,7 +78,10 @@ const DEFAULTS: Settings = {
   storageLimitGB: 8,
   theme: 'light',
   playerStyle: 'deep',
+  songChange: 'slide',
+  keepScreenOn: true,
   playbackSpeed: 1,
+  crossfadeSeconds: 0,
   suggestSimilar: true,
   floatingBubble: false,
   bubbleRingColor: 'white',

@@ -136,6 +136,15 @@ class PlayerServiceImpl {
   private replacing = false;
   /** Direction of the song change being loaded, copied into the state once it shows. */
   private moveDir: MoveDir = 0;
+  /** Seconds of crossfade for the song change about to happen (see maybeStartNextOnTime). */
+  private crossfadeNext = 0;
+  /** The crossfade running now, if any. */
+  private fading: {
+    old: VideoPlayer;
+    next: VideoPlayer;
+    timer: ReturnType<typeof setInterval>;
+    done: () => void;
+  } | null = null;
   /** The load the next song was started early for (see maybeStartNextOnTime). */
   private startedNextFor = -1;
   /** The player of the song before, released once the new one has taken over (see swapTo). */
@@ -213,7 +222,8 @@ class PlayerServiceImpl {
       this.checkSleep();
       this.maybePreload();
       this.maybeStartNextOnTime(currentTime);
-      if (this.retiring && currentTime >= 2) this.releaseRetiring();
+      if (this.retiring && !this.fading && currentTime >= 2)
+        this.releaseRetiring();
     });
     p.addEventListener('onLoad', ({ duration }) => {
       if (!mine()) return;
@@ -310,6 +320,7 @@ class PlayerServiceImpl {
   private async load(index: number, autoplay = true) {
     const item = this.state.queue[index];
     if (!item) return;
+    this.finishCrossfade();
     const token = ++this.loadToken;
 
     const pre = this.takePreloaded(item.id);
@@ -382,7 +393,8 @@ class PlayerServiceImpl {
       !PRELOAD ||
       this.preloadedFor === this.loadToken ||
       duration <= 0 ||
-      duration - position > PRELOAD_BEFORE_END_S
+      duration - position >
+        Math.max(PRELOAD_BEFORE_END_S, getSettings().crossfadeSeconds + 10)
     )
       return;
     const token = this.loadToken;
@@ -397,19 +409,20 @@ class PlayerServiceImpl {
    */
   private maybeStartNextOnTime(position: number) {
     const pre = this.preloaded;
-    const left =
-      (this.progress.duration - position) / getSettings().playbackSpeed;
+    const left = this.secondsLeft(position);
+    const fade = this.crossfadeLength();
+    const lead = fade || NEXT_START_DELAY_S;
     if (
       !pre ||
       this.startedNextFor === this.loadToken ||
-      left > 0.6 ||
+      left > lead + 0.4 ||
       left <= 0 ||
       pre.item.id !== this.upcoming()?.id
     )
       return;
     const token = this.loadToken;
     this.startedNextFor = token;
-    const wait = Math.max(0, (left - NEXT_START_DELAY_S) * 1000);
+    const wait = Math.max(0, (left - lead) * 1000);
     whileAway(
       () =>
         new Promise<void>(resolve =>
@@ -419,10 +432,72 @@ class PlayerServiceImpl {
               resolve();
               return;
             }
+            // Crossfade over what's left (the next song may have been loaded late).
+            if (fade) this.crossfadeNext = Math.min(fade, this.secondsLeft());
             this.next(true).finally(resolve);
           }, wait),
         ),
     ).catch(() => {});
+  }
+
+  /** Seconds of real time until the song ends, at the playback speed. */
+  private secondsLeft(position = this.progress.position) {
+    return (this.progress.duration - position) / getSettings().playbackSpeed;
+  }
+
+  /** The crossfade setting, shortened for short songs (0 = off). */
+  private crossfadeLength() {
+    const s = getSettings().crossfadeSeconds;
+    if (!s) return 0;
+    return Math.min(
+      s,
+      this.progress.duration / getSettings().playbackSpeed / 3,
+    );
+  }
+
+  /**
+   * The song before keeps playing, getting quieter, while the new one gets
+   * louder (equal power, so the sum stays as loud). Timers run with the screen
+   * off here (whileAway).
+   */
+  private startCrossfade(old: VideoPlayer, next: VideoPlayer, seconds: number) {
+    const start = Date.now();
+    whileAway(
+      () =>
+        new Promise<void>(resolve => {
+          const step = () => {
+            if (this.fading?.next !== next) return;
+            const x = Math.min(1, (Date.now() - start) / (seconds * 1000));
+            const level = this.sleepLevel();
+            try {
+              next.volume = Math.sin((x * Math.PI) / 2) * level;
+              old.volume = Math.cos((x * Math.PI) / 2) * level;
+            } catch {}
+            if (x >= 1) this.finishCrossfade();
+          };
+          this.fading = {
+            old,
+            next,
+            timer: setInterval(step, 50),
+            done: resolve,
+          };
+          step();
+        }),
+    ).catch(() => {});
+  }
+
+  /** Ends a crossfade now (done, or cut short): the song before stops, this one plays at full volume. */
+  private finishCrossfade() {
+    const f = this.fading;
+    if (!f) return;
+    this.fading = null;
+    clearInterval(f.timer);
+    try {
+      f.next.volume = this.sleepLevel();
+    } catch {}
+    if (this.retiring === f.old) this.releaseRetiring();
+    else this.releasePlayer(f.old);
+    f.done();
   }
 
   /** What `next(true)` will play when this song ends, when that's known in advance. */
@@ -494,12 +569,15 @@ class PlayerServiceImpl {
   private swapTo(pre: { item: QueueItem; player: VideoPlayer }, index: number) {
     const old = this.player;
     const p = pre.player;
+    const fade = this.crossfadeNext;
+    this.crossfadeNext = 0;
     this.releaseRetiring();
     if (old) {
       // Started on time for the end (maybeStartNextOnTime): let the last
-      // moments play out under the new song's start. Skipped to: stop it now.
+      // moments (or the crossfade) play out under the new song's start.
+      // Skipped to: stop it now.
       const left = this.progress.duration - this.progress.position;
-      if (!(left > 0 && left < 1)) {
+      if (!fade && !(left > 0 && left < 1)) {
         try {
           old.pause();
         } catch {}
@@ -509,7 +587,13 @@ class PlayerServiceImpl {
     this.player = p;
     this.activate(p);
     this.applyLoop();
+    if (fade && old) {
+      try {
+        p.volume = 0;
+      } catch {}
+    }
     this.play();
+    if (fade && old) this.startCrossfade(old, p, fade);
 
     const live = this.state.queue[index];
     this.showLoaded(
@@ -785,6 +869,7 @@ class PlayerServiceImpl {
   }
   pause() {
     this.wantsToPlay = false;
+    this.finishCrossfade();
     try {
       this.player?.pause();
     } catch {}
@@ -935,8 +1020,15 @@ class PlayerServiceImpl {
       if (playing) toast('Sleep timer: music paused');
       return;
     }
-    if (left < SLEEP_FADE_S)
-      this.setVolume(Math.max(0.05, left / SLEEP_FADE_S));
+    if (left < SLEEP_FADE_S && !this.fading) this.setVolume(this.sleepLevel());
+  }
+
+  /** 1, or less during the sleep timer's fade-out. */
+  private sleepLevel() {
+    const sleep = this.state.sleep;
+    if (!sleep || !('at' in sleep)) return 1;
+    const left = (sleep.at - Date.now()) / 1000;
+    return left < SLEEP_FADE_S ? Math.max(0.05, left / SLEEP_FADE_S) : 1;
   }
 
   toggleShuffle() {
@@ -1044,6 +1136,7 @@ class PlayerServiceImpl {
     this.wantsToPlay = false;
     this.loadToken++; // ignore any stream still being resolved
     this.cancelSleep(true);
+    this.finishCrossfade();
     this.dropPreloaded();
     this.releaseRetiring();
     const p = this.player;
