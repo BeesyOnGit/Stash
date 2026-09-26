@@ -7,6 +7,14 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.2.0
+
+- **Karaoke:** sing any song on your phone. Tap the new mic button in the player (or Karaoke in a song's ••• menu), then choose **Remove the vocals** or **Sing over the song** as it is, for songs that are already instrumental or karaoke versions. The lyrics scroll with the music, and **Sing** records you over it (use headphones so the mic only hears you). Afterwards, listen back, set your voice volume and timing, and save it (Android).
+- **Vocals removed on your phone:** an AI voice remover (UVR-MDX-NET Inst HQ 4, from Ultimate Vocal Remover) takes the singer out of the song. It isn't built into the app: it downloads once (59 MB) the first time you use karaoke, then works offline. Nothing is sent anywhere.
+- **Sing sooner:** the instrumental plays while it's still being made. The app measures how fast your phone is and tells you when you can start ("Ready to sing in about 1:20") so the music never catches up with the making. If it ever falls behind, the music and your recording pause together, so you stay in time. On older phones it takes a few minutes the first time; after that a song opens instantly.
+- **Karaoke recordings:** your saved performances are listed under Saving, grouped by song. Play them, rename or delete them, share them, or tap **Show in folder** to open them in your file manager. They're saved in the phone's Music/Karaoke folder, so other music apps see them too.
+- **Paste your own lyrics:** tap **Paste yours** under the lyrics (or **Paste lyrics** when none are found) to use your own words instead. Timed lyrics in LRC format (`[01:23.45] …`) follow the song; plain text just scrolls.
+
 ## 1.1.7
 
 - **stash speaks your language:** the app now comes in English, French, Arabic, Spanish and German, and uses your phone's language by default (English if it isn't one of these). Pick another one in Settings → Language. In Arabic the app is laid out right to left; switching to or from Arabic takes effect after restarting stash.

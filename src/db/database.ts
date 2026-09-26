@@ -533,3 +533,77 @@ export async function saveLyricsRow(
     [trackId, row.plain, row.synced, row.source, row.checkedAt],
   );
 }
+
+// ---- karaoke recordings (services/karaokeRecordings) ----
+
+db.executeSync(`
+  CREATE TABLE IF NOT EXISTS karaoke_recordings (
+    id TEXT PRIMARY KEY NOT NULL,
+    track_id TEXT,
+    title TEXT NOT NULL,
+    artist TEXT,
+    path TEXT NOT NULL,
+    duration REAL,
+    size_bytes INTEGER,
+    created_at INTEGER NOT NULL
+  );
+`);
+
+export interface RecordingRow {
+  id: string;
+  /** The song it was sung over (null when it couldn't be told, e.g. a file found in the folder). */
+  trackId: string | null;
+  /** The song's title and artist when it was recorded. */
+  title: string;
+  artist: string | null;
+  path: string;
+  /** Seconds. */
+  duration: number | null;
+  sizeBytes: number | null;
+  createdAt: number;
+}
+
+const toRecording = (r: Row): RecordingRow => ({
+  id: r.id as string,
+  trackId: (r.track_id as string) ?? null,
+  title: r.title as string,
+  artist: (r.artist as string) ?? null,
+  path: r.path as string,
+  duration: (r.duration as number) ?? null,
+  sizeBytes: (r.size_bytes as number) ?? null,
+  createdAt: r.created_at as number,
+});
+
+export async function getRecordings(): Promise<RecordingRow[]> {
+  const res = await db.execute(
+    'SELECT * FROM karaoke_recordings ORDER BY created_at DESC',
+  );
+  return res.rows.map(toRecording);
+}
+
+export async function addRecording(r: RecordingRow): Promise<void> {
+  await db.execute(
+    'INSERT OR REPLACE INTO karaoke_recordings (id, track_id, title, artist, path, duration, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [
+      r.id,
+      r.trackId,
+      r.title,
+      r.artist,
+      r.path,
+      r.duration,
+      r.sizeBytes,
+      r.createdAt,
+    ],
+  );
+}
+
+export async function setRecordingPath(id: string, path: string) {
+  await db.execute('UPDATE karaoke_recordings SET path = ? WHERE id = ?', [
+    path,
+    id,
+  ]);
+}
+
+export async function deleteRecordingRow(id: string): Promise<void> {
+  await db.execute('DELETE FROM karaoke_recordings WHERE id = ?', [id]);
+}

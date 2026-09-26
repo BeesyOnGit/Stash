@@ -210,6 +210,19 @@ export const LyricsIcon = ({ size = 20, color }: P) => (
   </Svg>
 );
 
+/** A microphone (karaoke). */
+export const MicIcon = ({ size = 18, color, strokeWidth = 2.2 }: P) => (
+  <Svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    {...stroke(color, strokeWidth)}
+  >
+    <Rect x="9" y="3" width="6" height="11" rx="3" />
+    <Path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M8.5 21h7" />
+  </Svg>
+);
+
 export const SimilarIcon = ({ size = 18, color }: P) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" {...stroke(color, 2.2)}>
     <Circle cx="12" cy="12" r="2" fill={color} />

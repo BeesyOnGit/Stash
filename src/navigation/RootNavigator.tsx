@@ -11,6 +11,7 @@ import { StatusBar } from 'react-native';
 import { Sheets } from '../components/Sheets';
 import { TabBar } from '../components/TabBar';
 import { CollectionScreen } from '../screens/CollectionScreen';
+import { KaraokeScreen } from '../screens/KaraokeScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
 import { SavingScreen } from '../screens/SavingScreen';
@@ -64,7 +65,10 @@ export function RootNavigator() {
   const { playerStyle } = useSettings();
   const [route, setRoute] = useState<string | undefined>();
   // Light status bar text on dark backgrounds (dark theme, or the deep player).
-  const lightBar = t.dark || (route === 'Player' && playerStyle === 'deep');
+  const lightBar =
+    t.dark ||
+    route === 'Karaoke' ||
+    (route === 'Player' && playerStyle === 'deep');
 
   const base = t.dark ? DarkTheme : DefaultTheme;
   const navTheme = {
@@ -95,6 +99,14 @@ export function RootNavigator() {
         <Root.Screen
           name="Player"
           component={PlayerScreen}
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Root.Screen
+          name="Karaoke"
+          component={KaraokeScreen}
           options={{
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom',

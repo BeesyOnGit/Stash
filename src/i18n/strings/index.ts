@@ -1,5 +1,6 @@
 import type { Entry, Lang } from '../types';
 import common from './common';
+import karaoke from './karaoke';
 import library from './library';
 import player from './player';
 import settings from './settings';
@@ -7,7 +8,16 @@ import sheets from './sheets';
 import stats from './stats';
 import system from './system';
 
-const PARTS = [common, settings, player, sheets, library, stats, system];
+const PARTS = [
+  common,
+  settings,
+  player,
+  sheets,
+  library,
+  stats,
+  system,
+  karaoke,
+];
 
 export type Key =
   | keyof typeof common.en
@@ -16,7 +26,8 @@ export type Key =
   | keyof typeof sheets.en
   | keyof typeof library.en
   | keyof typeof stats.en
-  | keyof typeof system.en;
+  | keyof typeof system.en
+  | keyof typeof karaoke.en;
 
 const LANGS: Lang[] = ['en', 'fr', 'ar', 'es', 'de'];
 

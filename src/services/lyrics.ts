@@ -105,6 +105,26 @@ export async function chooseLyrics(
   return fromRow(row);
 }
 
+/** `source` of lyrics the user pasted (shown as "Your lyrics"). */
+export const OWN_LYRICS = 'Yours';
+
+/** Keeps lyrics the user pasted: timed if they're LRC ("[01:02.50] …"), plain otherwise. */
+export async function saveOwnLyrics(
+  trackId: string,
+  text: string,
+): Promise<Lyrics> {
+  const clean = text.trim();
+  const timed = parseLrc(clean);
+  const row: LyricsRow = {
+    plain: timed.length ? timed.map(l => l.text).join('\n') : clean,
+    synced: timed.length ? clean : null,
+    source: OWN_LYRICS,
+    checkedAt: Date.now(),
+  };
+  await saveLyricsRow(trackId, row);
+  return fromRow(row);
+}
+
 /** "[01:02.50]" style timed lyrics → lines, in order. Tags like [ar:…] are skipped. */
 export function parseLrc(lrc: string): LyricLine[] {
   const lines: LyricLine[] = [];

@@ -1,10 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { getSettingSync, setSettingSync } from '../db/database';
-import {
-  currentLanguage,
-  setLanguagePref,
-  type LanguagePref,
-} from '../i18n';
+import { currentLanguage, setLanguagePref, type LanguagePref } from '../i18n';
 
 /** `device`: straight from the phone (youtubei.js); otherwise via a front-end API instance. */
 export type YoutubeBackend = 'device' | 'piped' | 'invidious';

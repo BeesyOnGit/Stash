@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Saved karaoke recordings (src/services/karaokeRecordings.ts), shared with apps the user picks. -->
+<paths>
+  <external-path name="music" path="Music/" />
+  <files-path name="recordings" path="karaoke-recordings/" />
+</paths>

@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tr, type Key } from '../i18n';
 import { useDownloads } from '../player/hooks';
 import { getActiveDownloadIds } from '../services/downloader';
-import { ACCENT, font, mono, useTheme } from '../theme';
+import { ACCENT, mono, useTheme } from '../theme';
 import {
   DownloadIcon,
   LibraryTabIcon,
@@ -32,7 +32,7 @@ const LABELS: Record<string, Key> = {
   Settings: 'settings.tabSettings',
 };
 
-/** Mini player + the five-tab bar (with the Saving badge). */
+/** Mini player + the five-tab bar, icons only (with the Saving badge). */
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -79,8 +79,8 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               }}
               style={styles.tab}
             >
+              {/* Icons only: the names don't fit in every language (they're still read out). */}
               {ICONS[route.name]?.(color)}
-              <Text style={[font(500, 11), { color }]}>{label}</Text>
               {route.name === 'Saving' && active > 0 && (
                 <View style={styles.badge}>
                   <Text style={[mono(600, 10), styles.badgeText]}>
@@ -101,13 +101,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'flex-start',
-    paddingTop: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
   },
-  tab: { width: 72, alignItems: 'center', gap: 4 },
+  tab: {
+    width: 72,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badge: {
     position: 'absolute',
-    top: -2,
+    top: 2,
     left: 46,
     minWidth: 16,
     height: 16,

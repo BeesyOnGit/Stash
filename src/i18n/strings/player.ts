@@ -50,6 +50,13 @@ export default defineStrings({
       'Nothing found. Try fewer words, or the original title.',
     'player.lyricsInstrumental': 'This song has no lyrics (instrumental)',
     'player.lyricsLrcFile': 'LRC file',
+    'player.lyricsPaste': 'Paste lyrics',
+    'player.lyricsPasteYours': 'Paste yours',
+    'player.lyricsPasteOwn': 'Paste your own lyrics',
+    'player.lyricsPasteHint':
+      'Paste the words. Timed lyrics (LRC, like [01:23.45] …) follow the song.',
+    'player.lyricsPastePlaceholder': 'Lyrics',
+    'player.lyricsYours': 'Your lyrics',
   },
   fr: {
     'player.findingStream': 'Recherche du flux…',
@@ -95,6 +102,13 @@ export default defineStrings({
       'Rien trouvé. Essaie avec moins de mots, ou le titre original.',
     'player.lyricsInstrumental': 'Ce titre n’a pas de paroles (instrumental)',
     'player.lyricsLrcFile': 'Fichier LRC',
+    'player.lyricsPaste': 'Coller les paroles',
+    'player.lyricsPasteYours': 'Coller les tiennes',
+    'player.lyricsPasteOwn': 'Coller tes propres paroles',
+    'player.lyricsPasteHint':
+      'Colle les paroles. Les paroles synchronisées (LRC, comme [01:23.45] …) suivent la chanson.',
+    'player.lyricsPastePlaceholder': 'Paroles',
+    'player.lyricsYours': 'Tes paroles',
   },
   ar: {
     'player.findingStream': 'جارٍ البحث عن البث…',
@@ -139,6 +153,13 @@ export default defineStrings({
       'لم يُعثر على شيء. جرّب كلمات أقل، أو العنوان الأصلي.',
     'player.lyricsInstrumental': 'هذه الأغنية بلا كلمات (موسيقى فقط)',
     'player.lyricsLrcFile': 'ملف LRC',
+    'player.lyricsPaste': 'لصق الكلمات',
+    'player.lyricsPasteYours': 'الصق كلماتك',
+    'player.lyricsPasteOwn': 'لصق كلماتك الخاصة',
+    'player.lyricsPasteHint':
+      'الصق الكلمات. الكلمات المتزامنة (LRC مثل [01:23.45] …) تتبع الأغنية.',
+    'player.lyricsPastePlaceholder': 'الكلمات',
+    'player.lyricsYours': 'كلماتك',
   },
   es: {
     'player.findingStream': 'Buscando la transmisión…',
@@ -184,6 +205,13 @@ export default defineStrings({
       'No hay resultados. Prueba con menos palabras o con el título original.',
     'player.lyricsInstrumental': 'Esta canción no tiene letra (instrumental)',
     'player.lyricsLrcFile': 'Archivo LRC',
+    'player.lyricsPaste': 'Pegar letra',
+    'player.lyricsPasteYours': 'Pegar la tuya',
+    'player.lyricsPasteOwn': 'Pegar tu propia letra',
+    'player.lyricsPasteHint':
+      'Pega la letra. Las letras sincronizadas (LRC, como [01:23.45] …) siguen la canción.',
+    'player.lyricsPastePlaceholder': 'Letra',
+    'player.lyricsYours': 'Tu letra',
   },
   de: {
     'player.findingStream': 'Stream wird gesucht…',
@@ -228,5 +256,12 @@ export default defineStrings({
       'Nichts gefunden. Versuch es mit weniger Wörtern oder dem Originaltitel.',
     'player.lyricsInstrumental': 'Dieser Song hat keinen Text (instrumental)',
     'player.lyricsLrcFile': 'LRC-Datei',
+    'player.lyricsPaste': 'Songtext einfügen',
+    'player.lyricsPasteYours': 'Eigenen einfügen',
+    'player.lyricsPasteOwn': 'Eigenen Songtext einfügen',
+    'player.lyricsPasteHint':
+      'Füge den Text ein. Synchronisierte Texte (LRC, wie [01:23.45] …) folgen dem Song.',
+    'player.lyricsPastePlaceholder': 'Songtext',
+    'player.lyricsYours': 'Dein Songtext',
   },
 });

@@ -34,7 +34,7 @@ export function parseKeptFileName(fileName: string): {
 }
 
 /** Android 9 and 10 need the storage permission to write to Music; 11+ don't. */
-async function mayWritePublicMusic(): Promise<boolean> {
+export async function mayWritePublicMusic(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
   if (Number(Platform.Version) >= 30) return true;
   const perm = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;

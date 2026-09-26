@@ -12,8 +12,10 @@ import { tr } from '../i18n';
 import { PlayerService } from '../player/PlayerService';
 import { useProgress } from '../player/hooks';
 import {
+  OWN_LYRICS,
   chooseLyrics,
   lyricsFor,
+  saveOwnLyrics,
   searchLyrics,
   type LyricLine,
   type Lyrics,
@@ -36,21 +38,30 @@ interface Colors {
 /**
  * The player's lyrics, in place of the cover. Timed lyrics follow the song
  * (the current line lit, tap a line to jump there); plain lyrics just scroll.
+ * `position` (karaoke) follows that clock instead of the player's, and lines
+ * can't be tapped.
  */
 export function LyricsPanel({
   track,
   ink,
   chip,
   style,
-}: Colors & { track: Track; style?: StyleProp<ViewStyle> }) {
+  position,
+}: Colors & {
+  track: Track;
+  style?: StyleProp<ViewStyle>;
+  position?: number;
+}) {
   const [lyrics, setLyrics] = useState<Lyrics | null>(null); // null: looking
   const [searching, setSearching] = useState(false);
+  const [pasting, setPasting] = useState(false);
   const online = useOnline();
 
   useEffect(() => {
     let live = true;
     setLyrics(null);
     setSearching(false);
+    setPasting(false);
     lyricsFor(track).then(l => live && setLyrics(l));
     return () => {
       live = false;
@@ -59,6 +70,23 @@ export function LyricsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track.id]);
 
+  if (pasting) {
+    return (
+      <LyricsPaste
+        track={track}
+        ink={ink}
+        chip={chip}
+        style={style}
+        onCancel={() => setPasting(false)}
+        onSaved={l => {
+          setLyrics(l);
+          setPasting(false);
+          setSearching(false);
+        }}
+      />
+    );
+  }
+
   if (searching) {
     return (
       <LyricsSearch
@@ -66,6 +94,7 @@ export function LyricsPanel({
         ink={ink}
         chip={chip}
         style={style}
+        onPaste={() => setPasting(true)}
         onCancel={() => setSearching(false)}
         onPicked={l => {
           setLyrics(l);
@@ -86,7 +115,14 @@ export function LyricsPanel({
       </View>
     );
   } else if (lyrics.lines) {
-    body = <Synced key={track.id} lines={lyrics.lines} ink={ink} />;
+    body = (
+      <Synced
+        key={track.id}
+        lines={lyrics.lines}
+        ink={ink}
+        position={position}
+      />
+    );
   } else if (lyrics.plain) {
     body = (
       <ScrollView
@@ -115,16 +151,26 @@ export function LyricsPanel({
             ? tr('player.lyricsSearchHint')
             : tr('player.lyricsOfflineHint')}
         </Text>
-        {online && (
+        <View style={styles.pills}>
+          {online && (
+            <Pressable
+              onPress={() => setSearching(true)}
+              style={[styles.pill, { backgroundColor: chip }]}
+            >
+              <Text style={[font(600, 13), { color: ink }]}>
+                {tr('player.lyricsSearch')}
+              </Text>
+            </Pressable>
+          )}
           <Pressable
-            onPress={() => setSearching(true)}
+            onPress={() => setPasting(true)}
             style={[styles.pill, { backgroundColor: chip }]}
           >
             <Text style={[font(600, 13), { color: ink }]}>
-              {tr('player.lyricsSearch')}
+              {tr('player.lyricsPaste')}
             </Text>
           </Pressable>
-        )}
+        </View>
       </View>
     );
   }
@@ -145,6 +191,11 @@ export function LyricsPanel({
               .filter(Boolean)
               .join(' · ')}
           </Text>
+          <Pressable hitSlop={8} onPress={() => setPasting(true)}>
+            <Text style={[font(600, 12), styles.dim, { color: ink }]}>
+              {tr('player.lyricsPasteYours')}
+            </Text>
+          </Pressable>
           {online && (
             <Pressable hitSlop={8} onPress={() => setSearching(true)}>
               <Text style={[font(600, 12), styles.dim, { color: ink }]}>
@@ -161,7 +212,9 @@ export function LyricsPanel({
 /** Where the lyrics came from, for the footer (a service's name stays as is). */
 function sourceName(source: string | null) {
   // services/lyrics saves a song's own .lrc file as "LRC file".
-  return source === 'LRC file' ? tr('player.lyricsLrcFile') : source;
+  if (source === 'LRC file') return tr('player.lyricsLrcFile');
+  if (source === OWN_LYRICS) return tr('player.lyricsYours');
+  return source;
 }
 
 // ---- timed lyrics ----
@@ -169,8 +222,18 @@ function sourceName(source: string | null) {
 /** After the user scrolls, leave the list alone this long before following the song again. */
 const HANDS_OFF_MS = 3500;
 
-function Synced({ lines, ink }: { lines: LyricLine[]; ink: string }) {
-  const { position } = useProgress();
+function Synced({
+  lines,
+  ink,
+  position: clock,
+}: {
+  lines: LyricLine[];
+  ink: string;
+  position?: number;
+}) {
+  const player = useProgress().position;
+  const position = clock ?? player;
+  const seekable = clock === undefined;
   const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const ys = useRef<number[]>([]);
   const height = useRef(0);
@@ -223,6 +286,7 @@ function Synced({ lines, ink }: { lines: LyricLine[]; ink: string }) {
           state={i === current ? 'now' : i < current ? 'past' : 'next'}
           index={i}
           onY={setY}
+          seekable={seekable}
         />
       ))}
     </ScrollView>
@@ -235,16 +299,19 @@ const Line = memo(function Line({
   state,
   index,
   onY,
+  seekable,
 }: {
   line: LyricLine;
   ink: string;
   state: 'past' | 'now' | 'next';
   index: number;
   onY: (index: number, y: number) => void;
+  seekable: boolean;
 }) {
   return (
     <Pressable
       haptic="tick"
+      disabled={!seekable}
       onLayout={e => onY(index, e.nativeEvent.layout.y)}
       onPress={() => PlayerService.seekTo(line.time)}
       style={styles.line}
@@ -271,11 +338,13 @@ function LyricsSearch({
   ink,
   chip,
   style,
+  onPaste,
   onCancel,
   onPicked,
 }: Colors & {
   track: Track;
   style?: StyleProp<ViewStyle>;
+  onPaste: () => void;
   onCancel: () => void;
   onPicked: (l: Lyrics) => void;
 }) {
@@ -374,8 +443,69 @@ function LyricsSearch({
               {tr('player.lyricsInstrumental')}
             </Text>
           </Pressable>
+          <Pressable onPress={onPaste} style={styles.result}>
+            <Text style={[font(500, 13), styles.dim, { color: ink }]}>
+              {tr('player.lyricsPasteOwn')}
+            </Text>
+          </Pressable>
         </ScrollView>
       )}
+    </View>
+  );
+}
+
+// ---- pasting your own ----
+
+function LyricsPaste({
+  track,
+  ink,
+  chip,
+  style,
+  onCancel,
+  onSaved,
+}: Colors & {
+  track: Track;
+  style?: StyleProp<ViewStyle>;
+  onCancel: () => void;
+  onSaved: (l: Lyrics) => void;
+}) {
+  const [text, setText] = useState('');
+  return (
+    <View style={[styles.flex, style]}>
+      <Text style={[font(400, 13, 1.4), styles.dim, { color: ink }]}>
+        {tr('player.lyricsPasteHint')}
+      </Text>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        multiline
+        autoFocus
+        textAlignVertical="top"
+        placeholder={tr('player.lyricsPastePlaceholder')}
+        placeholderTextColor="rgba(255,255,255,0.45)"
+        style={[
+          font(500, 15, 1.4),
+          styles.pasteBox,
+          { backgroundColor: chip, color: ink },
+        ]}
+      />
+      <View style={styles.pasteRow}>
+        <Pressable hitSlop={8} onPress={onCancel}>
+          <Text style={[font(600, 13), { color: ink }]}>
+            {tr('common.cancel')}
+          </Text>
+        </Pressable>
+        <Pressable
+          disabled={!text.trim()}
+          onPress={async () => onSaved(await saveOwnLyrics(track.id, text))}
+          style={[
+            styles.pill,
+            { backgroundColor: ink, opacity: text.trim() ? 1 : 0.4 },
+          ]}
+        >
+          <Text style={[font(600, 13), styles.onInk]}>{tr('common.save')}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -386,6 +516,21 @@ const styles = StyleSheet.create({
   faint: { opacity: 0.55 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   centerText: { textAlign: 'center', paddingHorizontal: 24 },
+  pills: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  pasteBox: {
+    flex: 1,
+    marginTop: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  pasteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+  },
+  onInk: { color: '#111' },
   pill: {
     marginTop: 6,
     paddingHorizontal: 16,

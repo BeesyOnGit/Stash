@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { KaraokeRecordings } from '../components/KaraokeRecordings';
 import { TrackRow } from '../components/TrackRow';
 import { tr } from '../i18n';
 import { PlayerService } from '../player/PlayerService';
@@ -9,6 +10,7 @@ import {
   getActiveDownloadIds,
   getDownloadProgress,
 } from '../services/downloader';
+import { karaokeSupported } from '../services/karaoke';
 import { useSettings } from '../services/settings';
 import { formatBytes } from '../services/storage';
 import {
@@ -154,6 +156,8 @@ export function SavingScreen() {
           }
         />
       ))}
+
+      {karaokeSupported() && <KaraokeRecordings />}
     </ScrollView>
   );
 }

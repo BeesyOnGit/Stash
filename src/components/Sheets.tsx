@@ -9,10 +9,11 @@ import {
   createPlaylist,
   togglePlaylistTrack,
 } from '../db/database';
-import { navigationRef, openCollection } from '../navigation/ref';
+import { navigationRef, openCollection, openKaraoke } from '../navigation/ref';
 import { PlayerService } from '../player/PlayerService';
 import { sourceName } from '../sources';
 import { useLibrary, usePlayerState, useSleepLeft } from '../player/hooks';
+import { canKaraoke } from '../services/karaoke';
 import { deleteFromLibrary } from '../services/library';
 import { useOnline } from '../services/network';
 import { SPEEDS, speedLabel, useSettings } from '../services/settings';
@@ -163,6 +164,16 @@ function MenuSheet({
       label: tr('sheets.sleepTimerMenu'),
       hint: sleepLeft ?? undefined,
       onPress: () => openSheet({ kind: 'sleep' }),
+    });
+  }
+  if (canKaraoke(track)) {
+    actions.push({
+      label: tr('karaoke.title'),
+      hint: tr('karaoke.menuHint'),
+      onPress: () => {
+        closeSheet();
+        openKaraoke(track);
+      },
     });
   }
   if (track.genre) {

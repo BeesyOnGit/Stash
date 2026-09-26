@@ -125,6 +125,9 @@ dependencies {
     // Android Auto session (car/). Same Media3 version as react-native-video.
     implementation("androidx.media3:media3-session:1.4.1")
     implementation("androidx.media3:media3-common:1.4.1")
+    // Karaoke: runs the vocal-removal model on the phone (the model itself is downloaded on first use).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
+    testImplementation("junit:junit:4.13.2")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

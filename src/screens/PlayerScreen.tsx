@@ -41,6 +41,8 @@ import {
 } from '../services/settings';
 import { keepScreenOn } from '../services/screen';
 import { WAVEFORM_BARS } from '../services/waveform';
+import { openKaraoke } from '../navigation/ref';
+import { canKaraoke } from '../services/karaoke';
 import { openSheet } from '../state/ui';
 import {
   ACCENT,
@@ -61,6 +63,7 @@ import {
   DownloadIcon,
   LyricsIcon,
   HeartIcon,
+  MicIcon,
   MoonIcon,
   MoreIcon,
   NextIcon,
@@ -618,18 +621,25 @@ export function PlayerScreen() {
           <View style={styles.flex}>
             <SongTitle track={song} ink={i.ink} />
           </View>
-          <RoundBtn
-            bg={chip}
-            size={44}
-            haptic="confirm"
-            onPress={() => PlayerService.toggleLike(live)}
-          >
-            <HeartIcon
-              size={22}
-              color={song.liked ? (deep ? '#FF8A65' : ACCENT) : i.ink}
-              fill={song.liked ? (deep ? '#FF8A65' : ACCENT) : 'none'}
-            />
-          </RoundBtn>
+          <View style={styles.titleBtns}>
+            {canKaraoke(song) && (
+              <RoundBtn bg={chip} size={44} onPress={() => openKaraoke(live)}>
+                <MicIcon size={20} color={i.ink} />
+              </RoundBtn>
+            )}
+            <RoundBtn
+              bg={chip}
+              size={44}
+              haptic="confirm"
+              onPress={() => PlayerService.toggleLike(live)}
+            >
+              <HeartIcon
+                size={22}
+                color={song.liked ? (deep ? '#FF8A65' : ACCENT) : i.ink}
+                fill={song.liked ? (deep ? '#FF8A65' : ACCENT) : 'none'}
+              />
+            </RoundBtn>
+          </View>
         </>
       ),
       status: statusChips(i, mini),
@@ -1335,6 +1345,8 @@ const Dot = ({ color }: { color: string }) => (
 
 const styles = StyleSheet.create({
   fill: { flex: 1, overflow: 'hidden' },
+  /** Karaoke and Like beside the title, apart enough not to hit one for the other. */
+  titleBtns: { flexDirection: 'row', gap: 12 },
   clip: { overflow: 'hidden' },
   flex: { flex: 1, minWidth: 0 },
   white: { color: '#fff' },
