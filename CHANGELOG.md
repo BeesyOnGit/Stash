@@ -7,6 +7,14 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.0
+
+- **stash for desktop:** stash now runs on Windows, macOS and Linux too, with everything the phone app does — your library, search across your library and free sources, saving while you stream, playlists and automatic playlists, genres, stats, synced lyrics (paste your own, or pick other ones), similar songs and random suggestions, sleep timer, playback speed, crossfade, song change animations, the vinyl styles and karaoke with the voice remover. Download it from this release: the `.exe` (or `.msi`) for Windows, the `.dmg` for macOS (Apple silicon or Intel), the `.AppImage`, `.deb` or `.rpm` for Linux.
+- **Made for a big screen:** a sidebar with your playlists, a Now playing panel beside the library (drag its edge to resize it), a full-screen player (F), and keyboard shortcuts: Space to play or pause, L for lyrics, Ctrl+← / → to skip, Ctrl+K to search. The keyboard's media keys and the system's media controls work too.
+- **Keeps playing in the background:** closing the window keeps the music going in the tray (Quit is in the tray menu). While stash is minimised or in the tray, a **mini vinyl player** floats over your other windows: drag it anywhere, drop it on ✕ to hide it, click it for controls, your favorites and suggestions.
+- **Your files, where you expect them:** saved songs go to your Music/stash folder and karaoke takes to Music/Karaoke. Settings → Scan for music adds the music in your Music and Downloads folders, and brings back songs stash saved before.
+- **Updates itself:** new versions are offered when stash starts (or Settings → Check for updates), checked against their signature, installed, and stash restarts — your library stays as it is.
+
 ## 1.2.0
 
 - **Karaoke:** sing any song on your phone. Tap the new mic button in the player (or Karaoke in a song's ••• menu), then choose **Remove the vocals** or **Sing over the song** as it is, for songs that are already instrumental or karaoke versions. The lyrics scroll with the music, and **Sing** records you over it (use headphones so the mic only hears you). Afterwards, listen back, set your voice volume and timing, and save it (Android).

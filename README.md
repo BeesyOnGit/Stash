@@ -2,11 +2,13 @@
 
 *Your library first, the open web second.*
 
-An offline-first music player for Android (iOS builds too, with fewer features).
-It plays the music on your phone, finds more online when you search, and keeps
-what you listen to so it plays offline next time.
+An offline-first music player for Android (iOS builds too, with fewer features)
+and desktop (Windows, macOS, Linux). It plays the music on your device, finds
+more online when you search, and keeps what you listen to so it plays offline
+next time.
 
-Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
+- Phone: plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
+- Desktop: [Tauri 2](https://tauri.app) with React and TypeScript, in [`desktop/`](desktop/).
 
 ## Features
 
@@ -39,6 +41,14 @@ Plain React Native CLI app (no Expo), React Native 0.87, New Architecture.
 - Background playback with notification and lock-screen controls.
 - **Updates from GitHub Releases**: new versions are offered when the app starts (or Settings → Check for updates), downloaded, checked against their checksum and installed over the old one, keeping your library.
 
+**Desktop** (same library features, laid out for a big screen)
+- Sidebar with Library, Search, Stats, Saving and Settings, your playlists and the automatic ones; a resizable Now playing panel with the cover or vinyl, synced lyrics and Up next (drag to reorder, swipe sideways to take a song out).
+- Full-screen player (F), keyboard shortcuts (Space, L, Ctrl+←/→, Ctrl+K, Esc) and the keyboard's media keys / the system's media controls.
+- Closing the window keeps the music playing in the tray; minimised or in the tray, a **mini vinyl player** floats over other windows (drag it, drop it on ✕ to hide it, click it for controls, favorites and suggestions).
+- Saved songs go to the computer's Music/stash folder, karaoke takes to Music/Karaoke; Settings → Scan for music adds your Music and Downloads folders and brings back songs saved before.
+- **Karaoke** with the same voice remover, run on the computer (ONNX Runtime), and the microphone recorded in time with the music.
+- **Updates from GitHub Releases**: new versions are offered at start (or Settings → Check for updates), their signature is checked, and stash installs them and restarts.
+
 ## Build
 
 Requirements:
@@ -57,7 +67,20 @@ Releases are built by GitHub Actions (`.github/workflows/release.yml`): push a t
 
 Local release APK: `cd android && ./gradlew assembleRelease`. Set up your own signing key first (`STASH_UPLOAD_STORE_FILE` and friends in `~/.gradle/gradle.properties`), and keep it: updates must be signed with the same key.
 
-Runs on Android 7.0+ (minSdk 24) and iOS 15.1+. For the optional [Jamendo](https://devportal.jamendo.com) catalogue, add a free client id in Settings.
+### Desktop
+
+Requirements: Node.js ≥ 22.11, [Rust](https://rustup.rs) (stable) and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your system (WebView2 on Windows is already there on 10/11; on Linux `libwebkit2gtk-4.1-dev` and friends).
+
+```sh
+cd desktop
+npm install
+npm run tauri dev     # the app, with hot reload of the interface
+npm run tauri build   # installers in desktop/src-tauri/target/release/bundle
+```
+
+The first Rust build downloads ONNX Runtime (for karaoke) and takes a few minutes. The release workflow builds the Windows (NSIS and MSI), macOS (Apple silicon and Intel) and Linux (AppImage, deb, rpm) installers into the same GitHub Release as the APK, with the `latest.json` the desktop updater reads. The updater only accepts builds signed with the key whose public half is in `desktop/src-tauri/tauri.conf.json`: add the private key to the repository secrets as `TAURI_SIGNING_PRIVATE_KEY` (and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if it has one), and keep it: losing it means installed desktop apps can't be updated any more.
+
+Runs on Android 7.0+ (minSdk 24) and iOS 15.1+; desktop on Windows 10/11, macOS 11+ and current Linux distributions. For the optional [Jamendo](https://devportal.jamendo.com) catalogue, add a free client id in Settings.
 
 ## Project layout
 
@@ -80,6 +103,11 @@ src/
   car/CarBridge.ts              Android Auto
   db/database.ts                SQLite schema and queries
   screens/, components/, ui/    the interface
+desktop/                        the desktop app (Tauri)
+  src/core/                     the same services as src/ (player, sources, lyrics, stats, i18n…), on the desktop's platform layer (native.ts)
+  src/ui/                       the screens, the Now playing panel, the full-screen player, karaoke, the mini player bridge
+  src/mini.tsx                  the mini vinyl player window
+  src-tauri/src/                Rust: downloads, files, audio decoding, the karaoke voice remover and mixing, the tray icon
 android/app/src/main/java/com/musicapp/
   bubble/                       overlay windows for the floating bubble
   car/                          Android Auto service
@@ -123,6 +151,16 @@ stash is built on the work of these open-source projects. Thank you to their aut
 | [event-target-polyfill](https://github.com/benlesh/event-target-polyfill) | MIT |
 | [fast-text-encoding](https://github.com/samthor/fast-text-encoding) | Apache-2.0 |
 | [youtubei.js](https://github.com/LuanRT/YouTube.js) (LuanRT) | MIT |
+
+**Desktop**
+
+| Project | License |
+| --- | --- |
+| [Tauri](https://github.com/tauri-apps/tauri) and its plugins (sql, http, updater, process, opener, dialog, single-instance) | MIT / Apache-2.0 |
+| [Vite](https://github.com/vitejs/vite) | MIT |
+| [Symphonia](https://github.com/pdeljanov/Symphonia) (audio decoding) | MPL-2.0 |
+| [ort](https://github.com/pykeio/ort) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT / Apache-2.0, MIT |
+| [RustFFT](https://github.com/ejmahler/RustFFT), [hound](https://github.com/ruuda/hound), [reqwest](https://github.com/seanmonstar/reqwest), [tokio](https://github.com/tokio-rs/tokio), [serde](https://github.com/serde-rs/serde) | MIT / Apache-2.0 |
 
 **Android**
 

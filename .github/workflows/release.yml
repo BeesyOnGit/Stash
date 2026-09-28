@@ -1,16 +1,25 @@
-# Builds a signed APK and publishes it as a GitHub Release.
+# Builds stash for Android (signed APK) and desktop (Windows, macOS, Linux)
+# and publishes them together as one GitHub Release.
 #
 # Start one by pushing a version tag:
-#   git tag v1.0.0 && git push origin v1.0.0
+#   git tag v1.2.0 && git push origin v1.2.0
 # or from the Actions tab (Run workflow) with a version number.
 #
 # Release notes come from this version's section of CHANGELOG.md ("## 1.2.0").
 #
+# The release is created as a draft, the builds upload into it, and it's
+# published at the end, so the apps never see a release whose files aren't
+# there yet. Installed apps then offer it as an update:
+#   - Android reads the .apk (and its .sha256)
+#   - desktop reads latest.json, whose installers are signed for the updater
+#
 # Needs these repository secrets (Settings → Secrets and variables → Actions):
-#   ANDROID_KEYSTORE_BASE64   the release keystore file, base64-encoded
-#   ANDROID_KEYSTORE_PASSWORD its store password
-#   ANDROID_KEY_ALIAS         the key alias
-#   ANDROID_KEY_PASSWORD      the key password
+#   ANDROID_KEYSTORE_BASE64            the release keystore file, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD          its store password
+#   ANDROID_KEY_ALIAS                  the key alias
+#   ANDROID_KEY_PASSWORD               the key password
+#   TAURI_SIGNING_PRIVATE_KEY          the desktop updater's private key (contents of the .key file)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD its password (can be empty)
 name: Release
 
 on:
@@ -26,9 +35,12 @@ permissions:
   contents: write # to create the release
 
 jobs:
-  apk:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+      release_id: ${{ steps.release.outputs.id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,16 +50,64 @@ jobs:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           missing=""
           [ -n "$KEYSTORE" ] || missing="$missing ANDROID_KEYSTORE_BASE64"
           [ -n "$STORE_PASSWORD" ] || missing="$missing ANDROID_KEYSTORE_PASSWORD"
           [ -n "$KEY_ALIAS" ] || missing="$missing ANDROID_KEY_ALIAS"
           [ -n "$KEY_PASSWORD" ] || missing="$missing ANDROID_KEY_PASSWORD"
+          [ -n "$TAURI_KEY" ] || missing="$missing TAURI_SIGNING_PRIVATE_KEY"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository secrets:$missing (Settings → Secrets and variables → Actions)"
             exit 1
           fi
+
+      - name: Version from the tag
+        id: version
+        run: |
+          RAW="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${RAW#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          # 1.2.3 → 10203: always higher for a higher version, so phones accept the update.
+          CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      # Release notes: this version's "## x.y.z" section of CHANGELOG.md, if it
+      # has one; otherwise GitHub's automatic notes.
+      - name: Release notes from CHANGELOG.md
+        run: |
+          VERSION="${{ steps.version.outputs.name }}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              /^## / { if (found) exit; h=$2; sub(/^v/, "", h); if (h == v) { found=1; next } }
+              found { print }
+            ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
+          fi
+          [ -s release-notes.md ] || echo "No CHANGELOG.md section for $VERSION: using GitHub's automatic notes."
+
+      - name: Create the draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.name }}"
+          if [ -s release-notes.md ]; then NOTES=(--notes-file release-notes.md); else NOTES=(--generate-notes); fi
+          # Run again for the same version: reuse the draft that's there.
+          ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          if [ -z "$ID" ]; then
+            gh release create "$TAG" --draft --target "${{ github.sha }}" --title "stash ${{ steps.version.outputs.name }}" "${NOTES[@]}"
+            ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          fi
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+
+  apk:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -60,17 +120,6 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
-
-      - name: Version from the tag
-        id: version
-        run: |
-          RAW="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${RAW#v}"
-          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
-          # 1.2.3 → 10203: always higher for a higher version, so phones accept the update.
-          CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
-          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "code=$CODE" >> "$GITHUB_OUTPUT"
 
       - run: npm ci
 
@@ -91,43 +140,100 @@ jobs:
         run: >
           chmod +x gradlew &&
           ./gradlew assembleRelease --no-daemon
-          -PstashVersionName=${{ steps.version.outputs.name }}
-          -PstashVersionCode=${{ steps.version.outputs.code }}
+          -PstashVersionName=${{ needs.prepare.outputs.version }}
+          -PstashVersionCode=${{ needs.prepare.outputs.code }}
           -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
 
-      - name: Name the APK and its checksum
+      - name: Name the APK, add its checksum and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          APK="stash-${{ steps.version.outputs.name }}.apk"
+          APK="stash-${{ needs.prepare.outputs.version }}.apk"
           mv android/app/build/outputs/apk/release/app-release.apk "$APK"
           sha256sum "$APK" > "$APK.sha256"
           rm -f android/app/release.keystore
+          gh release upload "v${{ needs.prepare.outputs.version }}" "$APK" "$APK.sha256" --clobber
 
-      # Release notes: this version's "## x.y.z" section of CHANGELOG.md, if it
-      # has one; otherwise GitHub's automatic notes.
-      - name: Release notes from CHANGELOG.md
-        id: notes
+  desktop:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: macos-latest
+            args: '--target aarch64-apple-darwin'
+            rust-targets: aarch64-apple-darwin
+          - os: macos-latest
+            args: '--target x86_64-apple-darwin'
+            rust-targets: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build libraries
+        if: runner.os == 'Linux'
         run: |
-          VERSION="${{ steps.version.outputs.name }}"
-          if [ -f CHANGELOG.md ]; then
-            awk -v v="$VERSION" '
-              /^## / { if (found) exit; h=$2; sub(/^v/, "", h); if (h == v) { found=1; next } }
-              found { print }
-            ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
-          fi
-          if [ -s release-notes.md ]; then
-            echo "file=release-notes.md" >> "$GITHUB_OUTPUT"
-            echo "auto=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "No CHANGELOG.md section for $VERSION: using GitHub's automatic notes."
-            echo "auto=true" >> "$GITHUB_OUTPUT"
-          fi
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
-      - uses: softprops/action-gh-release@v2
+      - uses: actions/setup-node@v4
         with:
-          tag_name: v${{ steps.version.outputs.name }}
-          name: stash ${{ steps.version.outputs.name }}
-          body_path: ${{ steps.notes.outputs.file }}
-          generate_release_notes: ${{ steps.notes.outputs.auto == 'true' }}
-          files: |
-            stash-${{ steps.version.outputs.name }}.apk
-            stash-${{ steps.version.outputs.name }}.apk.sha256
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.rust-targets || matrix.os }}
+
+      - name: Version from the tag
+        working-directory: desktop
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+            conf.version = v;
+            fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            pkg.version = v;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          ' "${{ needs.prepare.outputs.version }}"
+
+      - run: npm ci
+        working-directory: desktop
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          args: ${{ matrix.args }}
+          includeUpdaterJson: true
+          # The Windows updater installs the NSIS setup (no admin rights needed).
+          updaterJsonPreferNsis: true
+
+  publish:
+    needs: [prepare, apk, desktop]
+    # A desktop system failing to build doesn't hold back the others (or the phone).
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.apk.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "v${{ needs.prepare.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
