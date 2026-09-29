@@ -8,7 +8,7 @@
  * them back after a reinstall.
  */
 import {
-  deleteTrackRow,
+  dropFailedDownload,
   getTrack,
   getTracksByStatus,
   updateTrack,
@@ -111,7 +111,7 @@ export async function downloadTrack(
   } catch (e) {
     // Don't leave half files or "ghost" entries in the library; the song can simply be played again.
     await removeFile(path);
-    await deleteTrackRow(track.id);
+    await dropFailedDownload(track.id);
     console.warn(`Download of ${track.title} failed`, e);
     finishedListeners.forEach(fn => fn(track, false));
   } finally {
@@ -140,6 +140,6 @@ export async function cleanupInterruptedDownloads(): Promise<void> {
     for (const f of files.filter(x => x.name.startsWith(prefix))) {
       await removeFile(f.path);
     }
-    await deleteTrackRow(t.id);
+    await dropFailedDownload(t.id);
   }
 }

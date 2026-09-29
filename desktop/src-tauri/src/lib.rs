@@ -5,12 +5,14 @@
 //! - `files`: the file system (library folders, scans, recordings)
 //! - `audio`: decoding any song to 44.1 kHz stereo (karaoke)
 //! - `karaoke`: the vocal remover (UVR-MDX-NET on ONNX Runtime) and mixing takes
+//! - `sync`: the Wi-Fi sync server the phone app connects to (no internet)
 //! - `tray`: the tray icon, since closing the window keeps the music playing
 
 mod audio;
 mod download;
 mod files;
 mod karaoke;
+mod sync;
 mod tray;
 
 use tauri::{Emitter, Manager, WindowEvent};
@@ -50,6 +52,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
         .manage(karaoke::Karaoke::default())
+        .manage(sync::Sync::default())
         .setup(|app| {
             tray::create(app.handle())?;
             Ok(())
@@ -89,6 +92,14 @@ pub fn run() {
             karaoke::karaoke_release,
             karaoke::karaoke_mix,
             tray::tray_set_playing,
+            sync::sync_start,
+            sync::sync_status,
+            sync::sync_pair_open,
+            sync::sync_pair_close,
+            sync::sync_unpair,
+            sync::sync_reply,
+            sync::sync_ping,
+            sync::sync_qr,
         ])
         .run(tauri::generate_context!())
         .expect("error while running stash");
