@@ -7,6 +7,13 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.1
+
+- **Desktop downloads are here:** the Windows and macOS versions are now attached to the release, next to the phone app: the `.exe` (or `.msi`) for Windows and the `.dmg` for macOS (Apple silicon or Intel).
+- **Smaller phone app:** the Android download is about a third smaller (around 80 MB instead of 126 MB). It now needs a 64-bit phone, which is almost every phone from the last several years.
+- **Karaoke on Intel Macs:** the voice remover isn't available on Intel Macs yet. You can still sing over songs as they are, and everything else works the same. On Apple silicon Macs and Windows, karaoke is unchanged.
+- **Linux:** the Linux version is paused for now and isn't part of this release.
+
 ## 1.3.0
 
 - **stash for desktop:** stash now runs on Windows, macOS and Linux too, with everything the phone app does — your library, search across your library and free sources, saving while you stream, playlists and automatic playlists, genres, stats, synced lyrics (paste your own, or pick other ones), similar songs and random suggestions, sleep timer, playback speed, crossfade, song change animations, the vinyl styles and karaoke with the voice remover. Download it from this release: the `.exe` (or `.msi`) for Windows, the `.dmg` for macOS (Apple silicon or Intel), the `.AppImage`, `.deb` or `.rpm` for Linux.

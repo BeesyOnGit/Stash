@@ -151,13 +151,14 @@ jobs:
           ORG_GRADLE_PROJECT_STASH_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ORG_GRADLE_PROJECT_STASH_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_STASH_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        # Phones only (ARM): half the build time of also building the emulator (x86) versions.
+        # 64-bit phones only: no emulator (x86) versions, and no 32-bit ARM, which
+        # would add a second copy of the karaoke engine (ONNX Runtime, ~45 MB).
         run: >
           chmod +x gradlew &&
           ./gradlew assembleRelease --no-daemon
           -PstashVersionName=${{ needs.prepare.outputs.version }}
           -PstashVersionCode=${{ needs.prepare.outputs.code }}
-          -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+          -PreactNativeArchitectures=arm64-v8a
 
       - name: Name the APK, add its checksum and upload
         env:
@@ -180,9 +181,12 @@ jobs:
           - os: macos-latest
             args: '--target aarch64-apple-darwin'
             rust-targets: aarch64-apple-darwin
+          # Intel Macs: ONNX Runtime has no prebuilt library for them, so this
+          # build has no voice remover (karaoke jobs say so; the rest works).
           - os: macos-latest
-            args: '--target x86_64-apple-darwin'
+            args: '--target x86_64-apple-darwin -- --no-default-features'
             rust-targets: x86_64-apple-darwin
+            no-karaoke: true
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -212,11 +216,12 @@ jobs:
             const v = process.argv[1];
             const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
             conf.version = v;
+            if (process.argv[2] === "true") delete conf.build.features;
             fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
             const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
             pkg.version = v;
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
-          ' "${{ needs.prepare.outputs.version }}"
+          ' "${{ needs.prepare.outputs.version }}" "${{ matrix.no-karaoke || false }}"
 
       - run: npm ci
         working-directory: desktop
