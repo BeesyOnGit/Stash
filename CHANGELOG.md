@@ -7,6 +7,10 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.1
+
+- **stash for desktop:** fixed the build ptoblem
+
 ## 1.3.0
 
 - **stash for desktop:** stash now runs on Windows, macOS and Linux too, with everything the phone app does — your library, search across your library and free sources, saving while you stream, playlists and automatic playlists, genres, stats, synced lyrics (paste your own, or pick other ones), similar songs and random suggestions, sleep timer, playback speed, crossfade, song change animations, the vinyl styles and karaoke with the voice remover. Download it from this release: the `.exe` (or `.msi`) for Windows, the `.dmg` for macOS (Apple silicon or Intel), the `.AppImage`, `.deb` or `.rpm` for Linux.
