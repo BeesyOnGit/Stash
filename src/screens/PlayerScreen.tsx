@@ -910,50 +910,49 @@ export function PlayerScreen() {
             </IconBtn>
           </View>
 
-          <View style={styles.queueRow}>
-            <Pressable
-              onPress={() => openSheet({ kind: 'queue' })}
-              style={[styles.nextBtn, { backgroundColor: chip }]}
-            >
-              <QueueIcon color={ink} />
-              <Text
-                numberOfLines={1}
-                style={[font(500, 13), styles.flex, { color: ink }]}
-              >
-                {upNext}
-              </Text>
-            </Pressable>
-            {suggestSimilar && (
-              <Pressable
-                onPress={() => openSheet({ kind: 'similar', track: live })}
-                style={[styles.similarBtn, { backgroundColor: chip }]}
-              >
-                <SimilarIcon color={ink} />
-                <Text style={[font(600, 13), { color: ink }]}>
-                  {tr('player.similar')}
-                </Text>
-              </Pressable>
-            )}
+          {/* The design's tile row: equal icon tiles, Lyrics lit while it's open. */}
+          <View style={styles.tileRow}>
             <Pressable
               accessibilityLabel={
                 showLyrics ? tr('player.hideLyrics') : tr('player.showLyrics')
               }
               onPress={() => setShowLyrics(v => !v)}
               style={[
-                styles.addBtn,
-                { backgroundColor: showLyrics ? ink : chip },
+                styles.tile,
+                { backgroundColor: showLyrics ? (deep ? 'rgba(255,255,255,.3)' : '#fff') : chip },
               ]}
             >
-              <LyricsIcon color={showLyrics ? solid : ink} />
+              <LyricsIcon color={ink} />
             </Pressable>
+            <Pressable
+              accessibilityLabel={`${tr('sheets.queue')} · ${upNext}`}
+              onPress={() => openSheet({ kind: 'queue' })}
+              style={[styles.tile, { backgroundColor: chip }]}
+            >
+              <QueueIcon color={ink} />
+            </Pressable>
+            {suggestSimilar && (
+              <Pressable
+                accessibilityLabel={tr('player.similar')}
+                onPress={() => openSheet({ kind: 'similar', track: live })}
+                style={[styles.tile, { backgroundColor: chip }]}
+              >
+                <SimilarIcon color={ink} />
+              </Pressable>
+            )}
             {(live.status !== 'streaming' || online) && (
               <Pressable
+                accessibilityLabel={
+                  live.status === 'streaming'
+                    ? tr('player.saveOffline')
+                    : tr('sheets.addToPlaylist')
+                }
                 onPress={() =>
                   live.status === 'streaming'
                     ? PlayerService.saveOffline(live)
                     : openSheet({ kind: 'add', track: live })
                 }
-                style={[styles.addBtn, { backgroundColor: chip }]}
+                style={[styles.tile, { backgroundColor: chip }]}
               >
                 <AddToListIcon color={ink} />
               </Pressable>
@@ -1476,14 +1475,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
   },
-  similarBtn: {
-    height: 44,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-  },
   error: { color: '#FF8A80', marginTop: 6 },
   bottom: { marginTop: 'auto' },
   wave: { height: 44, flexDirection: 'row', alignItems: 'center', gap: 2 },
@@ -1531,25 +1522,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  queueRow: {
+  tileRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 8,
     marginTop: 14,
   },
-  nextBtn: {
+  tile: {
     flex: 1,
     minWidth: 0,
-    height: 44,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-  },
-  addBtn: {
-    width: 44,
-    height: 44,
+    height: 52,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',

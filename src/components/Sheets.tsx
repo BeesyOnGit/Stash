@@ -597,6 +597,11 @@ function QueueSheet() {
         </Text>
         <Text style={[font(400, 13), { color: t.muted }]}>{mode}</Text>
       </View>
+      {upNext.length > 0 && (
+        <Text style={[font(400, 12), styles.pad, styles.queueHint, { color: t.muted2 }]}>
+          {tr('sheets.queueHint')}
+        </Text>
+      )}
       <Text style={[eyebrow(11), styles.queueLabel, { color: t.muted }]}>
         {tr('sheets.nowPlaying')}
       </Text>
@@ -683,11 +688,6 @@ function QueueSheet() {
           </Pressable>
         </SwipeToRemove>
       ))}
-      {upNext.length > 1 && (
-        <Text style={[font(400, 12), styles.queueHint, { color: t.muted2 }]}>
-          {tr('sheets.queueHint')}
-        </Text>
-      )}
     </View>
   );
 }
@@ -1066,7 +1066,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: -10,
   },
-  queueHint: { textAlign: 'center', paddingVertical: 12 },
+  queueHint: { marginTop: 4 },
   queueRow: {
     flexDirection: 'row',
     alignItems: 'center',
