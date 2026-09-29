@@ -1,4 +1,4 @@
-# Builds stash for Android (signed APK) and desktop (Windows, macOS, Linux)
+# Builds stash for Android (signed APK) and desktop (Windows, macOS)
 # and publishes them together as one GitHub Release.
 #
 # Start one by pushing a version tag:
@@ -94,12 +94,27 @@ jobs:
         run: |
           TAG="v${{ steps.version.outputs.name }}"
           if [ -s release-notes.md ]; then NOTES=(--notes-file release-notes.md); else NOTES=(--generate-notes); fi
-          # Run again for the same version: reuse the draft that's there.
-          ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
-          if [ -z "$ID" ]; then
+          # Run again for the same version: reuse the release that's there. Keep
+          # exactly one per tag: the APK uploads by tag and the desktop builds by
+          # ID, so with several (drafts left by failed runs) they'd split up.
+          # Prefer a published one, then the newest draft; delete other drafts.
+          find_ids() {
+            gh api --paginate "repos/${{ github.repository }}/releases" \
+              --jq ".[] | select(.tag_name == \"$TAG\") | [.draft, .created_at, .id] | @tsv" \
+              | sort -k1,1 -k2,2r | cut -f3
+          }
+          IDS=$(find_ids)
+          if [ -z "$IDS" ]; then
             gh release create "$TAG" --draft --target "${{ github.sha }}" --title "stash ${{ steps.version.outputs.name }}" "${NOTES[@]}"
-            ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+            IDS=$(find_ids)
           fi
+          ID=$(echo "$IDS" | head -n1)
+          for OLD in $(echo "$IDS" | tail -n +2); do
+            if [ "$(gh api "repos/${{ github.repository }}/releases/$OLD" --jq .draft)" = "true" ]; then
+              echo "Deleting leftover draft release $OLD for $TAG"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$OLD"
+            fi
+          done
           echo "id=$ID" >> "$GITHUB_OUTPUT"
 
   apk:
@@ -168,18 +183,10 @@ jobs:
           - os: macos-latest
             args: '--target x86_64-apple-darwin'
             rust-targets: x86_64-apple-darwin
-          - os: ubuntu-22.04
-            args: ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-
-      - name: Linux build libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
       - uses: actions/setup-node@v4
         with:
