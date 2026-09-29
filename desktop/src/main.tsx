@@ -14,6 +14,7 @@ import { PlayerService } from './core/player/PlayerService';
 import { startDetailsLookup } from './core/services/artwork';
 import { cleanupInterruptedDownloads, onDownloadFinished } from './core/services/downloader';
 import { ensureDirs } from './core/services/paths';
+import { startSync } from './core/sync/server';
 import { getSettings, subscribeSettings } from './core/services/settings';
 import { startUpdateChecks } from './core/services/updater';
 import { openSheet, toast } from './core/state/ui';
@@ -72,6 +73,8 @@ async function start() {
   (async () => {
     await ensureDirs();
     await cleanupInterruptedDownloads();
+    // Wi-Fi sync with the phone app (listens on the local network).
+    await startSync();
   })().catch(e => console.warn('Startup failed', e));
 
   onDownloadFinished((track, ok) =>

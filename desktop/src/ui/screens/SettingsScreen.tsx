@@ -30,6 +30,7 @@ import { goTab } from '../appState';
 import { Logo } from '../icons';
 import { ACCENT, Card, OutlineButton, Segmented, SectionLabel, SettingRow, Spinner, Toggle, Vinyl } from '../kit';
 import { useRecordings } from './SavingScreen';
+import { SyncSettings } from './SyncSettings';
 
 export const RING_COLORS: Record<RingColor, string> = {
   white: '#FFFFFF',
@@ -497,6 +498,8 @@ export function SettingsScreen() {
           />
         ))}
       </Card>
+
+      <SyncSettings />
 
       <SectionLabel>{tr('settings.sectionApp')}</SectionLabel>
       <Card>

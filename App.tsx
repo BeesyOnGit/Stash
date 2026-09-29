@@ -12,6 +12,7 @@ import {
 import { startDetailsLookup } from './src/services/artwork';
 import { ensureDirs } from './src/services/paths';
 import { startUpdateChecks } from './src/services/updater';
+import { startSync } from './src/sync/client';
 import { openSheet, toast } from './src/state/ui';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
       await cleanupInterruptedDownloads();
       await convertOldDownloads();
       await keepOldDownloads(); // to Music/stash, so they survive an uninstall
+      await startSync(); // Wi-Fi sync with the computer app, if paired
     })().catch(e => console.warn('Startup failed', e));
 
     // Official names, covers and genres for songs that don't have them yet.

@@ -27,7 +27,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "rt"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "rt", "net", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "native-tls"] }
 futures-util = "0.3"
 sha2 = "0.10"
@@ -38,6 +38,18 @@ hound = "3.5"
 rustfft = "6"
 # The karaoke voice remover (UVR-MDX-NET) runs on ONNX Runtime.
 ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["std", "download-binaries", "copy-dylibs", "tls-native", "api-24"] }
+# Wi-Fi sync with the phone app (src/sync.rs): HTTP + WebSocket server, mDNS,
+# pairing (P-256 ECDH), HMAC-signed requests, AES-256-GCM, the pairing QR code.
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio", "ws", "query"] }
+mdns-sd = "0.21.4"
+if-addrs = "0.15.0"
+hmac = "0.12"
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
+hostname = "0.4.2"
+p256 = { version = "0.13", features = ["ecdh"] }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 
 [features]
 default = ["karaoke"]

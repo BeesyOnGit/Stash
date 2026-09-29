@@ -5,7 +5,7 @@
  */
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {
-  deleteTrackRow,
+  dropFailedDownload,
   getTrack,
   getTracksByStatus,
   updateTrack,
@@ -168,7 +168,7 @@ export async function downloadTrack(
     // Don't leave half files or "ghost" entries in the library; the song can simply be played again.
     await removeFile(path).catch(() => {});
     await removeFile(part).catch(() => {});
-    await deleteTrackRow(track.id);
+    await dropFailedDownload(track.id);
     console.warn(`Download of ${track.title} failed`, e);
     finishedListeners.forEach(fn => fn(track, false));
   } finally {
@@ -203,5 +203,5 @@ export async function cleanupInterruptedDownloads(): Promise<void> {
       }
     }
   }
-  for (const t of interrupted) await deleteTrackRow(t.id);
+  for (const t of interrupted) await dropFailedDownload(t.id);
 }

@@ -1,5 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { getSettingSync, setSettingSync } from '../db/database';
+import {
+  getSettingSync,
+  localChange,
+  setSettingSync,
+  syncClock,
+} from '../db/database';
+import type { SettingRow } from '../sync/core';
 import { currentLanguage, setLanguagePref, type LanguagePref } from '../i18n';
 
 /** `device`: straight from the phone (youtubei.js); otherwise via a front-end API instance. */
@@ -117,14 +123,38 @@ export function getSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
+  const language = getSettings().language;
   cache = { ...getSettings(), ...patch };
   if (cache.youtubeInstance) {
     cache.youtubeInstance = cache.youtubeInstance.trim().replace(/\/+$/, '');
   }
   setSettingSync('app', JSON.stringify(cache));
   setLanguagePref(cache.language);
+  if (cache.language !== language) {
+    // The one setting that syncs with the other device.
+    setSettingSync(LANGUAGE_STAMP, syncClock.tick());
+    localChange();
+  }
   listeners.forEach(fn => fn());
   return cache;
+}
+
+/** When the language was last chosen (sync: the newer choice wins on both devices). */
+const LANGUAGE_STAMP = 'sync_language_hlc';
+
+/** The language as it syncs, or null if it was never chosen since sync came. */
+export function syncedLanguage(): SettingRow | null {
+  const at = getSettingSync(LANGUAGE_STAMP);
+  return at ? { key: 'language', value: getSettings().language, updated_at: at } : null;
+}
+
+/** The other device's newer choice (not sent back: it keeps its stamp). */
+export function applySyncedLanguage(row: SettingRow) {
+  cache = { ...getSettings(), language: row.value as LanguagePref };
+  setSettingSync('app', JSON.stringify(cache));
+  setSettingSync(LANGUAGE_STAMP, row.updated_at);
+  setLanguagePref(cache.language);
+  listeners.forEach(fn => fn());
 }
 
 const subscribe = (fn: () => void) => {

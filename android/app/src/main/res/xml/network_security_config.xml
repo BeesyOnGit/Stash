@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Wi-Fi sync talks to the computer over plain HTTP on the local network (there
+  is no certificate for a LAN address); every request is signed and its data
+  encrypted by stash itself (src/sync/core/protocol.ts). Everything else is HTTPS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

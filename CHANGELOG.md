@@ -7,6 +7,14 @@ when offering the update.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.2
+
+- **Sync your phone and computer over Wi-Fi:** stash on your phone and stash on your computer now keep each other up to date, straight over your own network. No internet, no account, nothing goes through anyone else's servers.
+- **Pair once with a QR code:** on the computer, open Settings → Sync with phone → Pair a phone. On the phone, open Settings → Sync with computer → Pair with your computer and scan the code. If the camera can't read it, type the 6-digit code shown under it instead. Everything sent between the two is encrypted.
+- **Everything comes along:** your library and the songs themselves, playlists and their order, likes, listening stats (added up across both devices, never counted twice), lyrics, and karaoke recordings. Songs you add on one device show up on the other, and deleting one removes it on both. Your settings stay separate on each device, except the language.
+- **Almost instant:** while stash is open on both, a change on one shows up on the other within a second or so. Otherwise they catch up the next time both are open on the same network, and **Sync now** does it right away. Songs being copied show a progress bar with the files left and the time remaining, and a copy that gets cut off picks up where it stopped.
+- **Works on your phone's hotspot:** no Wi-Fi router nearby? Connect the computer to the phone's hotspot and they sync just the same.
+
 ## 1.3.1
 
 - **Desktop downloads are here:** the Windows and macOS versions are now attached to the release, next to the phone app: the `.exe` (or `.msi`) for Windows and the `.dmg` for macOS (Apple silicon or Intel).

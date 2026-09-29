@@ -14,6 +14,7 @@ import com.musicapp.display.ScreenPackage
 import com.twg.video.core.services.playback.CustomMediaNotificationProvider
 import com.musicapp.haptics.HapticsPackage
 import com.musicapp.karaoke.KaraokePackage
+import com.musicapp.sync.SyncPackage
 import com.musicapp.update.UpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -30,6 +31,7 @@ class MainApplication : Application(), ReactApplication {
           add(UpdaterPackage()) // updates from GitHub Releases (src/services/updater.ts)
           add(ScreenPackage()) // screen kept on in the player (src/services/screen.ts)
           add(KaraokePackage()) // vocal removal + voice mixing (src/services/karaoke.ts)
+          add(SyncPackage()) // Wi-Fi sync with the computer (src/sync/native.ts)
         },
     )
   }

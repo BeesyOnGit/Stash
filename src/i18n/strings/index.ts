@@ -6,6 +6,7 @@ import player from './player';
 import settings from './settings';
 import sheets from './sheets';
 import stats from './stats';
+import sync from './sync';
 import system from './system';
 
 const PARTS = [
@@ -17,6 +18,7 @@ const PARTS = [
   stats,
   system,
   karaoke,
+  sync,
 ];
 
 export type Key =
@@ -27,7 +29,8 @@ export type Key =
   | keyof typeof library.en
   | keyof typeof stats.en
   | keyof typeof system.en
-  | keyof typeof karaoke.en;
+  | keyof typeof karaoke.en
+  | keyof typeof sync.en;
 
 const LANGS: Lang[] = ['en', 'fr', 'ar', 'es', 'de'];
 
