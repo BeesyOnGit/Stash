@@ -2,7 +2,7 @@
 
 What's new in each version of stash. When a version is tagged (`v1.2.0`),
 its section below becomes the GitHub release notes, which the app also shows
-when offering the update.
+when offering the update/.
 
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
