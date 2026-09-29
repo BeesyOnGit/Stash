@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -57,6 +57,19 @@ import { ChevronRightIcon, LogoMark } from '../ui/icons';
 import { Chip, Segmented, Slider, Toggle } from '../ui/primitives';
 import { VINYL, Vinyl } from '../ui/Vinyl';
 import { Pressable } from '../ui/Pressable';
+import {
+  findComputers,
+  getSyncState,
+  pairAt,
+  pairWithQr,
+  scanPairingQr,
+  syncNow,
+  unpair,
+  useSync,
+  type PairResult,
+  type SyncState,
+} from '../sync/client';
+import { transferText } from '../sync/files';
 
 const GB = 1024 ** 3;
 
@@ -678,6 +691,8 @@ export function SettingsScreen() {
         )}
       </View>
 
+      {Platform.OS === 'android' && <SyncSection />}
+
       {Platform.OS === 'android' && (
         <>
           <Section title={tr('settings.sectionPhone')} />
@@ -732,6 +747,257 @@ export function SettingsScreen() {
         </View>
       </View>
     </ScrollView>
+  );
+}
+
+const PAIR_ERRORS: Record<Exclude<PairResult, 'ok'>, Key> = {
+  'not-found': 'sync.errNotFound',
+  'wrong-code': 'sync.errWrongCode',
+  closed: 'sync.errClosed',
+  'update-phone': 'sync.updatePhone',
+  'update-computer': 'sync.updateComputer',
+  failed: 'sync.errFailed',
+};
+
+/** "5 min ago" */
+function ago(at: number): string {
+  const min = Math.floor((Date.now() - at) / 60_000);
+  if (min < 1) return tr('sync.justNow');
+  if (min < 60) return tr('sync.minutesAgo', { count: min });
+  if (min < 24 * 60) {
+    return tr('sync.hoursAgo', { count: Math.floor(min / 60) });
+  }
+  return tr('sync.daysAgo', { count: Math.floor(min / (24 * 60)) });
+}
+
+function syncStatus(s: SyncState): string {
+  const name = s.paired?.name ?? '';
+  const last = s.lastSync
+    ? tr('sync.lastSync', { time: ago(s.lastSync) })
+    : tr('sync.never');
+  switch (s.phase) {
+    case 'syncing':
+      return tr('sync.syncing');
+    case 'searching':
+      return tr('sync.lookingFor', { name });
+    case 'update-phone':
+      return tr('sync.updatePhone');
+    case 'update-computer':
+      return tr('sync.updateComputer');
+    case 'connected':
+      return `${tr('sync.connected')} · ${last}`;
+    default:
+      return `${tr('sync.offline')} · ${last}`;
+  }
+}
+
+type Computer = Awaited<ReturnType<typeof findComputers>>[number];
+
+/** Settings → Sync with computer: pairing, status, Sync now, unpair. */
+function SyncSection() {
+  const t = useTheme();
+  const sync = useSync();
+  const [busy, setBusy] = useState(false);
+  const [computers, setComputers] = useState<Computer[] | null>(null);
+  const [picked, setPicked] = useState<Computer | null>(null);
+  const [code, setCode] = useState('');
+
+  useEffect(() => {
+    if (sync.unpaired) toast(tr('sync.unpairedByOther'));
+  }, [sync.unpaired]);
+
+  const done = (r: PairResult) => {
+    if (r !== 'ok') return toast(tr(PAIR_ERRORS[r]));
+    toast(tr('sync.paired', { name: getSyncState().paired?.name ?? '' }));
+    setComputers(null);
+    setPicked(null);
+    setCode('');
+  };
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await work();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const scan = async () => {
+    const text = await scanPairingQr().catch(() => null);
+    if (text) await run(async () => done(await pairWithQr(text)));
+  };
+  const search = () =>
+    run(async () => {
+      setComputers([]);
+      setPicked(null);
+      const list = await findComputers();
+      setComputers(list);
+      if (list.length === 1) setPicked(list[0]);
+    });
+  const submit = () => {
+    if (!picked || code.length !== 6) return;
+    run(async () => done(await pairAt(picked.base, picked.hello, code)));
+  };
+  const confirmUnpair = () => {
+    const name = sync.paired?.name ?? '';
+    Alert.alert(tr('sync.unpairTitle', { name }), tr('sync.unpairBody'), [
+      { text: tr('sync.cancel'), style: 'cancel' },
+      {
+        text: tr('sync.unpair'),
+        style: 'destructive',
+        onPress: () => {
+          unpair();
+        },
+      },
+    ]);
+  };
+  const p = sync.transfer;
+  const percent =
+    p && p.bytesTotal ? Math.round((p.bytesDone / p.bytesTotal) * 100) : 0;
+
+  return (
+    <>
+      <Section title={tr('sync.titlePhone')} />
+      <View
+        style={[styles.card, { backgroundColor: t.card, borderColor: t.line }]}
+      >
+        {sync.paired ? (
+          <>
+            <View
+              style={[
+                styles.block,
+                { borderBottomWidth: 1, borderBottomColor: t.line },
+              ]}
+            >
+              <Text style={[font(500, 15), { color: t.ink }]}>
+                {sync.paired.name}
+              </Text>
+              <Text
+                style={[font(400, 12, 1.4), styles.mt2, { color: t.muted }]}
+              >
+                {syncStatus(sync)}
+              </Text>
+              {p && (
+                <>
+                  <View style={[styles.track, { backgroundColor: t.line }]}>
+                    <View
+                      style={[
+                        styles.fill,
+                        { backgroundColor: t.ink, width: `${percent}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={[mono(400, 12), styles.mt8, { color: t.muted }]}>
+                    {`${tr(
+                      p.dir === 'send' ? 'sync.sending' : 'sync.receiving',
+                    )} · ${transferText(p)}`}
+                  </Text>
+                </>
+              )}
+            </View>
+            <Row
+              title={tr('sync.syncNow')}
+              onPress={sync.phase === 'syncing' ? undefined : () => syncNow()}
+              right={<ChevronRightIcon color={t.muted} />}
+              divider
+            />
+            <Row
+              title={tr('sync.unpair')}
+              sub={tr('sync.unpairSub', { name: sync.paired.name })}
+              onPress={confirmUnpair}
+            />
+          </>
+        ) : (
+          <>
+            <View style={styles.block}>
+              <Text style={[font(400, 13, 1.45), { color: t.muted }]}>
+                {tr('sync.intro')}
+              </Text>
+            </View>
+            <Row
+              title={tr('sync.pairScan')}
+              sub={tr('sync.pairScanSub')}
+              onPress={busy ? undefined : scan}
+              right={<ChevronRightIcon color={t.muted} />}
+              divider
+            />
+            <Row
+              title={tr('sync.pairCode')}
+              sub={tr('sync.pairCodeSub')}
+              onPress={busy ? undefined : search}
+              right={<ChevronRightIcon color={t.muted} />}
+            />
+            {computers && (
+              <View style={styles.block}>
+                {!computers.length && (
+                  <Text style={[font(400, 13, 1.45), { color: t.muted }]}>
+                    {tr(busy ? 'sync.searching' : 'sync.noneFound')}
+                  </Text>
+                )}
+                {computers.length > 1 && (
+                  <View style={styles.presets}>
+                    {computers.map(c => (
+                      <Chip
+                        key={c.hello.deviceId}
+                        label={c.hello.name}
+                        on={picked?.hello.deviceId === c.hello.deviceId}
+                        onPress={() => setPicked(c)}
+                      />
+                    ))}
+                  </View>
+                )}
+                {picked && (
+                  <View style={styles.field}>
+                    <Text
+                      style={[font(400, 12), styles.mb6, { color: t.muted }]}
+                    >
+                      {tr('sync.enterCode', { name: picked.hello.name })}
+                    </Text>
+                    <TextInput
+                      value={code}
+                      onChangeText={v =>
+                        setCode(v.replace(/[^0-9]/g, '').slice(0, 6))
+                      }
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="000000"
+                      placeholderTextColor={t.muted2}
+                      onSubmitEditing={submit}
+                      style={[
+                        mono(500, 22),
+                        styles.input,
+                        styles.codeInput,
+                        {
+                          backgroundColor: t.bg,
+                          borderColor: t.line2,
+                          color: t.ink,
+                        },
+                      ]}
+                    />
+                    <Pressable
+                      onPress={busy || code.length !== 6 ? undefined : submit}
+                      disabled={busy || code.length !== 6}
+                      style={[
+                        styles.pill,
+                        styles.mt10,
+                        styles.pairButton,
+                        {
+                          borderColor: t.line2,
+                          opacity: code.length === 6 ? 1 : 0.5,
+                        },
+                      ]}
+                    >
+                      <Text style={[font(600, 14), { color: t.ink }]}>
+                        {tr('sync.pairButton')}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    </>
   );
 }
 
@@ -899,6 +1165,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
+  codeInput: { letterSpacing: 6 },
+  pairButton: { alignSelf: 'flex-start' },
   about: {
     flexDirection: 'row',
     alignItems: 'center',

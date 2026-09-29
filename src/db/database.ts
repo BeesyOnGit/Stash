@@ -1,6 +1,20 @@
 import { open, type Scalar } from '@op-engineering/op-sqlite';
 import { tr } from '../i18n';
 import { dayKey } from '../services/stats';
+import {
+  HybridClock,
+  VISIBLE_TRACK,
+  baseName,
+  bumpPlaylistStatement,
+  bumpPlaylistsOf,
+  isSyncedTrackColumn,
+  migrateSyncSchema,
+  newestStamp,
+  tombstoneStatement,
+  trackStamp,
+  type SqlDb,
+  type Statement,
+} from '../sync/core';
 import type { Playlist, Track, TrackSource, TrackStatus } from '../types';
 
 const db = open({ name: 'library.db' });
@@ -95,7 +109,79 @@ db.executeSync(`
   );
 `);
 
+db.executeSync(`
+  CREATE TABLE IF NOT EXISTS karaoke_recordings (
+    id TEXT PRIMARY KEY NOT NULL,
+    track_id TEXT,
+    title TEXT NOT NULL,
+    artist TEXT,
+    path TEXT NOT NULL,
+    duration REAL,
+    size_bytes INTEGER,
+    created_at INTEGER NOT NULL
+  );
+`);
+
 type Row = Record<string, Scalar>;
+
+// ---- sync (src/sync): stamps on every change, deletions remembered ----
+
+/** This install's id, made once (sync tells devices and their changes apart). */
+export const DEVICE_ID: string = (() => {
+  const saved = getSettingSync('device_id');
+  if (saved) return saved;
+  const id = Array.from({ length: 16 }, () =>
+    Math.floor(Math.random() * 16).toString(16),
+  ).join('');
+  setSettingSync('device_id', id);
+  return id;
+})();
+
+export const syncClock = new HybridClock(DEVICE_ID);
+
+/** The database for the shared sync code (src/sync/core/store). */
+export const syncDb: SqlDb = {
+  all: async (sql, params = []) =>
+    (await db.execute(sql, params)).rows as never,
+  run: async (sql, params = []) => {
+    await db.execute(sql, params);
+  },
+  batch: async statements => {
+    await db.executeBatch(statements as [string, Scalar[]][]);
+  },
+};
+
+/** Sync columns added to existing libraries (their data is kept). Every query waits for it. */
+const ready = migrateSyncSchema(syncDb, DEVICE_ID)
+  .then(() => newestStamp(syncDb))
+  .then(h => syncClock.seed(h))
+  .catch(e => console.warn('Sync migration failed', e));
+export const whenDatabaseReady = () => ready;
+
+const localListeners = new Set<() => void>();
+/** Called after every local change that should reach the other device. */
+export const onLocalChange = (fn: () => void) => {
+  localListeners.add(fn);
+  return () => {
+    localListeners.delete(fn);
+  };
+};
+const changed = () => {
+  notify();
+  localListeners.forEach(fn => fn());
+};
+/** The library changed from elsewhere (a sync, a received file): screens re-query. */
+export const notifyLibrary = () => notify();
+/** A local change made outside this file (the language). */
+export const localChange = () => localListeners.forEach(fn => fn());
+
+const stampRow = () => {
+  const h = syncClock.tick();
+  return [h, DEVICE_ID] as const;
+};
+
+const batch = (statements: Statement[]) =>
+  db.executeBatch(statements as [string, Scalar[]][]);
 
 const toTrack = (r: Row): Track => ({
   id: r.id as string,
@@ -144,14 +230,19 @@ const notify = () => {
 // ---- tracks ----
 
 export async function getAllTracks(): Promise<Track[]> {
+  await ready;
   const res = await db.execute(
-    'SELECT * FROM tracks ORDER BY added_at DESC, title COLLATE NOCASE',
+    `SELECT * FROM tracks WHERE ${VISIBLE_TRACK} ORDER BY added_at DESC, title COLLATE NOCASE`,
   );
   return res.rows.map(toTrack);
 }
 
 export async function getTrack(id: string): Promise<Track | null> {
-  const res = await db.execute('SELECT * FROM tracks WHERE id = ?', [id]);
+  await ready;
+  const res = await db.execute(
+    `SELECT * FROM tracks WHERE id = ? AND ${VISIBLE_TRACK}`,
+    [id],
+  );
   return res.rows.length ? toTrack(res.rows[0]) : null;
 }
 
@@ -167,24 +258,52 @@ export async function searchLibrary(query: string): Promise<Track[]> {
     )
     .join(' AND ');
   const res = await db.execute(
-    `SELECT * FROM tracks WHERE status = 'ready' AND ${where} ORDER BY title COLLATE NOCASE LIMIT 100`,
+    `SELECT * FROM tracks WHERE status = 'ready' AND file_path IS NOT NULL AND ${where} ORDER BY title COLLATE NOCASE LIMIT 100`,
     words.map(w => `%${w}%`),
   );
   return res.rows.map(toTrack);
 }
 
+/** Synced columns an upsert of an existing song may change. */
+const UPSERT_SYNCED = [
+  'title',
+  'artist',
+  'album',
+  'genre',
+  'duration',
+  'remote_artwork_url',
+  'size_bytes',
+];
+
 export async function upsertTrack(t: Track): Promise<void> {
+  await ready;
+  // The song came from the other device and waits for its file: only this
+  // phone's own columns change (its synced details stay as they are).
+  const waiting = await db.execute(
+    "SELECT 1 FROM tracks WHERE id = ? AND file_path IS NULL AND status = 'ready'",
+    [t.id],
+  );
+  if (waiting.rows.length) {
+    await db.execute(
+      'UPDATE tracks SET status = ?, file_path = ? WHERE id = ?',
+      [t.status, t.filePath, t.id],
+    );
+    notify();
+    return;
+  }
+  const [h, by] = stampRow();
+  const s = trackStamp(UPSERT_SYNCED, h);
   await db.execute(
     `INSERT INTO tracks (id, source, source_id, title, artist, album, genre, duration, file_path,
                          artwork_path, remote_artwork_url, status, liked, size_bytes,
-                         added_at, saved_at, last_played_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         added_at, saved_at, last_played_at, updated_at, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title, artist = excluded.artist, album = excluded.album,
        genre = IFNULL(excluded.genre, genre), duration = excluded.duration,
        file_path = excluded.file_path, artwork_path = IFNULL(excluded.artwork_path, artwork_path),
        remote_artwork_url = excluded.remote_artwork_url, status = excluded.status,
-       size_bytes = IFNULL(excluded.size_bytes, size_bytes)`,
+       size_bytes = IFNULL(excluded.size_bytes, size_bytes), ${s.sql}`,
     [
       t.id,
       t.source,
@@ -203,9 +322,12 @@ export async function upsertTrack(t: Track): Promise<void> {
       t.addedAt,
       t.savedAt,
       t.lastPlayedAt,
+      h,
+      by,
+      ...s.params,
     ],
   );
-  notify();
+  changed();
 }
 
 const COLUMNS: Record<string, string> = {
@@ -236,28 +358,38 @@ export async function updateTrack(
     k => k in COLUMNS,
   ) as (keyof typeof patch)[];
   if (!keys.length) return;
+  await ready;
+  // Only synced columns get a new stamp (a file path or waveform is this phone's own).
+  const cols = keys.map(k => COLUMNS[k]);
+  const synced = cols.filter(isSyncedTrackColumn);
+  const s = synced.length ? trackStamp(synced, syncClock.tick()) : null;
   await db.execute(
-    `UPDATE tracks SET ${keys
-      .map(k => `${COLUMNS[k]} = ?`)
-      .join(', ')} WHERE id = ?`,
+    `UPDATE tracks SET ${cols.map(c => `${c} = ?`).join(', ')}${
+      // A new cover: its hash is worked out again (sync/files).
+      patch.artworkPath !== undefined ? ', artwork_hash = NULL' : ''
+    }${s ? `, ${s.sql}` : ''} WHERE id = ?`,
     [
       ...keys.map(k => {
         const v = patch[k];
         if (Array.isArray(v)) return v.join(','); // waveform
         return (typeof v === 'boolean' ? (v ? 1 : 0) : v ?? null) as Scalar;
       }),
+      ...(s?.params ?? []),
       id,
     ],
   );
-  notify();
+  if (s) changed();
+  else notify();
 }
 
 export async function countPlay(id: string): Promise<void> {
+  await ready;
+  const s = trackStamp(['play_count'], syncClock.tick());
   await db.execute(
-    'UPDATE tracks SET play_count = play_count + 1 WHERE id = ?',
-    [id],
+    `UPDATE tracks SET play_count = play_count + 1, ${s.sql} WHERE id = ?`,
+    [...s.params, id],
   );
-  notify();
+  changed();
 }
 
 /** Every song's details get looked up again (a better lookup came). */
@@ -265,28 +397,74 @@ export async function clearDetailChecks(): Promise<void> {
   await db.execute('UPDATE tracks SET meta_checked_at = NULL');
 }
 
+/** Removes the song everywhere (the other device deletes it too). */
 export async function deleteTrackRow(id: string): Promise<void> {
-  await db.execute('DELETE FROM tracks WHERE id = ?', [id]);
-  await db.execute('DELETE FROM playlist_tracks WHERE track_id = ?', [id]);
-  notify();
+  await ready;
+  await batch([
+    ...(await bumpPlaylistsOf(syncDb, syncClock, id)),
+    ['DELETE FROM tracks WHERE id = ?', [id]],
+    ['DELETE FROM playlist_tracks WHERE track_id = ?', [id]],
+    tombstoneStatement('tracks', id, syncClock.tick()),
+  ]);
+  changed();
+}
+
+/**
+ * A download that failed or was interrupted: gone, unless the song came from
+ * the other device (then it waits for its file from there again).
+ */
+export async function dropFailedDownload(id: string): Promise<void> {
+  await ready;
+  const res = await db.execute('SELECT content_hash FROM tracks WHERE id = ?', [
+    id,
+  ]);
+  if (res.rows[0]?.content_hash) {
+    await db.execute(
+      "UPDATE tracks SET status = 'ready', file_path = NULL WHERE id = ?",
+      [id],
+    );
+    notify();
+  } else {
+    await deleteTrackRow(id);
+  }
 }
 
 export async function getTracksByStatus(status: TrackStatus): Promise<Track[]> {
-  const res = await db.execute('SELECT * FROM tracks WHERE status = ?', [
-    status,
-  ]);
+  await ready;
+  const res = await db.execute(
+    `SELECT * FROM tracks WHERE status = ? AND ${VISIBLE_TRACK}`,
+    [status],
+  );
   return res.rows.map(toTrack);
 }
 
-export async function getDeviceTrackIds(): Promise<Set<string>> {
-  const res = await db.execute("SELECT id FROM tracks WHERE source = 'device'");
-  return new Set(res.rows.map(r => r.id as string));
+/**
+ * A file found on the phone for a song that came from the other device and
+ * waits for its file: now it has one. Returns false if no song waits.
+ */
+export async function attachFile(id: string, path: string): Promise<boolean> {
+  await ready;
+  const res = await db.execute(
+    "UPDATE tracks SET file_path = ? WHERE id = ? AND file_path IS NULL AND status = 'ready'",
+    [path, id],
+  );
+  if (res.rowsAffected) notify();
+  return !!res.rowsAffected;
+}
+
+/** Songs from the phone's own folders, by file path. */
+export async function getDeviceTrackPaths(): Promise<Map<string, string>> {
+  await ready;
+  const res = await db.execute(
+    "SELECT id, file_path FROM tracks WHERE source = 'device' AND file_path IS NOT NULL",
+  );
+  return new Map(res.rows.map(r => [r.file_path as string, r.id as string]));
 }
 
 /** Bytes used by songs the app downloaded (what the storage limit applies to). */
 export async function getDownloadedBytes(): Promise<number> {
   const res = await db.execute(
-    "SELECT IFNULL(SUM(size_bytes), 0) AS total FROM tracks WHERE source != 'device' AND status = 'ready'",
+    "SELECT IFNULL(SUM(size_bytes), 0) AS total FROM tracks WHERE source != 'device' AND status = 'ready' AND file_path IS NOT NULL",
   );
   return Number(res.rows[0]?.total ?? 0);
 }
@@ -294,6 +472,7 @@ export async function getDownloadedBytes(): Promise<number> {
 // ---- playlists ----
 
 export async function getPlaylists(): Promise<Playlist[]> {
+  await ready;
   const lists = await db.execute('SELECT * FROM playlists ORDER BY created_at');
   const items = await db.execute(
     'SELECT playlist_id, track_id FROM playlist_tracks ORDER BY position',
@@ -316,10 +495,12 @@ export async function createPlaylist(
   name: string,
   trackIds: string[] = [],
 ): Promise<string> {
-  const id = `p${Date.now()}`;
+  await ready;
+  // The device in the id: playlists made on both devices at once never clash.
+  const id = `p${Date.now()}-${DEVICE_ID.slice(0, 6)}`;
   await db.execute(
-    'INSERT INTO playlists (id, name, created_at) VALUES (?, ?, ?)',
-    [id, name, Date.now()],
+    'INSERT INTO playlists (id, name, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)',
+    [id, name, Date.now(), ...stampRow()],
   );
   for (const [i, tid] of trackIds.entries()) {
     await db.execute(
@@ -327,21 +508,30 @@ export async function createPlaylist(
       [id, tid, i],
     );
   }
-  notify();
+  changed();
   return id;
 }
 
 export async function deletePlaylist(id: string): Promise<void> {
-  await db.execute('DELETE FROM playlist_tracks WHERE playlist_id = ?', [id]);
-  await db.execute('DELETE FROM playlists WHERE id = ?', [id]);
-  notify();
+  await ready;
+  await batch([
+    ['DELETE FROM playlist_tracks WHERE playlist_id = ?', [id]],
+    ['DELETE FROM playlists WHERE id = ?', [id]],
+    tombstoneStatement('playlists', id, syncClock.tick()),
+  ]);
+  changed();
 }
+
+/** A playlist's songs changed: the whole playlist syncs as one. */
+const bumpPlaylist = (id: string) =>
+  batch([bumpPlaylistStatement(id, syncClock.tick())]);
 
 /** Adds the track to the playlist, or removes it if it's already there. Returns true if added. */
 export async function togglePlaylistTrack(
   playlistId: string,
   trackId: string,
 ): Promise<boolean> {
+  await ready;
   const has = await db.execute(
     'SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?',
     [playlistId, trackId],
@@ -351,7 +541,8 @@ export async function togglePlaylistTrack(
       'DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?',
       [playlistId, trackId],
     );
-    notify();
+    await bumpPlaylist(playlistId);
+    changed();
     return false;
   }
   const pos = await db.execute(
@@ -362,7 +553,8 @@ export async function togglePlaylistTrack(
     'INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)',
     [playlistId, trackId, Number(pos.rows[0]?.p ?? 0)],
   );
-  notify();
+  await bumpPlaylist(playlistId);
+  changed();
   return true;
 }
 
@@ -371,6 +563,7 @@ export async function addTracksToPlaylist(
   playlistId: string,
   trackIds: string[],
 ): Promise<number> {
+  await ready;
   const pos = await db.execute(
     'SELECT IFNULL(MAX(position), -1) + 1 AS p FROM playlist_tracks WHERE playlist_id = ?',
     [playlistId],
@@ -387,7 +580,10 @@ export async function addTracksToPlaylist(
       added++;
     }
   }
-  if (added) notify();
+  if (added) {
+    await bumpPlaylist(playlistId);
+    changed();
+  }
   return added;
 }
 
@@ -399,6 +595,7 @@ export async function setPlaylistOrder(
   playlistId: string,
   trackIds: string[],
 ): Promise<void> {
+  await ready;
   const res = await db.execute(
     'SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position',
     [playlistId],
@@ -414,7 +611,8 @@ export async function setPlaylistOrder(
       [i, playlistId, id],
     );
   }
-  notify();
+  await bumpPlaylist(playlistId);
+  changed();
 }
 
 // ---- listening stats ----
@@ -425,14 +623,18 @@ export async function addListening(
   seconds: number,
   plays: number,
 ): Promise<void> {
+  await ready;
   const now = new Date();
+  // This phone's own row: the other device's listening stays in its own rows.
   await db.execute(
-    `INSERT INTO listens (track_id, day, hour, seconds, plays, title, artist)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(track_id, day, hour) DO UPDATE SET
+    `INSERT INTO listens (device_id, track_id, day, hour, seconds, plays, title, artist, updated_at, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(device_id, track_id, day, hour) DO UPDATE SET
        seconds = seconds + excluded.seconds, plays = plays + excluded.plays,
-       title = excluded.title, artist = excluded.artist`,
+       title = excluded.title, artist = excluded.artist,
+       updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
     [
+      DEVICE_ID,
       track.id,
       dayKey(now),
       now.getHours(),
@@ -440,8 +642,10 @@ export async function addListening(
       plays,
       track.title,
       track.artist,
+      ...stampRow(),
     ],
   );
+  localChange();
 }
 
 export interface ListenRow {
@@ -455,14 +659,21 @@ export interface ListenRow {
   genre: string | null;
 }
 
-/** Listening rows since a day (inclusive), with the library's current names. */
+/**
+ * Listening rows since a day (inclusive), with the library's current names.
+ * Every device's rows are added up (each keeps its own, so nothing counts twice).
+ */
 export async function getListens(since: string | null): Promise<ListenRow[]> {
+  await ready;
   const res = await db.execute(
     `SELECT l.track_id, l.day, l.hour, l.seconds, l.plays,
             COALESCE(t.title, l.title) AS title, COALESCE(t.artist, l.artist) AS artist,
             t.genre AS genre
-     FROM listens l LEFT JOIN tracks t ON t.id = l.track_id
-     WHERE ? IS NULL OR l.day >= ?`,
+     FROM (SELECT track_id, day, hour, SUM(seconds) AS seconds, SUM(plays) AS plays,
+                  MAX(title) AS title, MAX(artist) AS artist
+           FROM listens WHERE ? IS NULL OR day >= ?
+           GROUP BY track_id, day, hour) l
+     LEFT JOIN tracks t ON t.id = l.track_id`,
     [since, since],
   );
   return res.rows.map(r => ({
@@ -479,6 +690,7 @@ export async function getListens(since: string | null): Promise<ListenRow[]> {
 
 /** Every day with some listening, oldest first (for streaks). */
 export async function getListenDays(): Promise<string[]> {
+  await ready;
   const res = await db.execute(
     'SELECT day FROM listens GROUP BY day HAVING SUM(seconds) > 0 ORDER BY day',
   );
@@ -511,6 +723,7 @@ export interface LyricsRow {
 }
 
 export async function getLyricsRow(trackId: string): Promise<LyricsRow | null> {
+  await ready;
   const res = await db.execute('SELECT * FROM lyrics WHERE track_id = ?', [
     trackId,
   ]);
@@ -528,26 +741,15 @@ export async function saveLyricsRow(
   trackId: string,
   row: LyricsRow,
 ): Promise<void> {
+  await ready;
   await db.execute(
-    'INSERT OR REPLACE INTO lyrics (track_id, plain, synced, source, checked_at) VALUES (?, ?, ?, ?, ?)',
-    [trackId, row.plain, row.synced, row.source, row.checkedAt],
+    'INSERT OR REPLACE INTO lyrics (track_id, plain, synced, source, checked_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [trackId, row.plain, row.synced, row.source, row.checkedAt, ...stampRow()],
   );
+  localChange();
 }
 
 // ---- karaoke recordings (services/karaokeRecordings) ----
-
-db.executeSync(`
-  CREATE TABLE IF NOT EXISTS karaoke_recordings (
-    id TEXT PRIMARY KEY NOT NULL,
-    track_id TEXT,
-    title TEXT NOT NULL,
-    artist TEXT,
-    path TEXT NOT NULL,
-    duration REAL,
-    size_bytes INTEGER,
-    created_at INTEGER NOT NULL
-  );
-`);
 
 export interface RecordingRow {
   id: string;
@@ -574,16 +776,19 @@ const toRecording = (r: Row): RecordingRow => ({
   createdAt: r.created_at as number,
 });
 
+/** Recordings on this phone (ones from the other device show once their file is here). */
 export async function getRecordings(): Promise<RecordingRow[]> {
+  await ready;
   const res = await db.execute(
-    'SELECT * FROM karaoke_recordings ORDER BY created_at DESC',
+    "SELECT * FROM karaoke_recordings WHERE path != '' ORDER BY created_at DESC",
   );
   return res.rows.map(toRecording);
 }
 
 export async function addRecording(r: RecordingRow): Promise<void> {
+  await ready;
   await db.execute(
-    'INSERT OR REPLACE INTO karaoke_recordings (id, track_id, title, artist, path, duration, size_bytes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT OR REPLACE INTO karaoke_recordings (id, track_id, title, artist, path, duration, size_bytes, created_at, file_name, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [
       r.id,
       r.trackId,
@@ -593,17 +798,28 @@ export async function addRecording(r: RecordingRow): Promise<void> {
       r.duration,
       r.sizeBytes,
       r.createdAt,
+      baseName(r.path),
+      ...stampRow(),
     ],
   );
+  changed();
 }
 
+/** Renamed (the new name syncs; the path itself is this phone's own). */
 export async function setRecordingPath(id: string, path: string) {
-  await db.execute('UPDATE karaoke_recordings SET path = ? WHERE id = ?', [
-    path,
-    id,
-  ]);
+  await ready;
+  await db.execute(
+    'UPDATE karaoke_recordings SET path = ?, file_name = ?, updated_at = ?, updated_by = ? WHERE id = ?',
+    [path, baseName(path), ...stampRow(), id],
+  );
+  changed();
 }
 
 export async function deleteRecordingRow(id: string): Promise<void> {
-  await db.execute('DELETE FROM karaoke_recordings WHERE id = ?', [id]);
+  await ready;
+  await batch([
+    ['DELETE FROM karaoke_recordings WHERE id = ?', [id]],
+    tombstoneStatement('karaoke_recordings', id, syncClock.tick()),
+  ]);
+  changed();
 }

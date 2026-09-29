@@ -6,8 +6,9 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import {
+  attachFile,
   deleteTrackRow,
-  getDeviceTrackIds,
+  getDeviceTrackPaths,
   getTrack,
   updateTrack,
   upsertTrack,
@@ -92,7 +93,8 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
   const files: FoundFile[] = [];
   for (const root of roots) await walk(root, 0, files);
 
-  const known = await getDeviceTrackIds();
+  // Songs already in the library, by path (their id comes from their audio once hashed).
+  const known = await getDeviceTrackPaths();
   const found = new Set<string>();
   const added: Track[] = [];
   const restored: Track[] = [];
@@ -105,6 +107,7 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
     if (kept) {
       const keptId = trackIdFor(kept.source, kept.sourceId);
       if (await getTrack(keptId)) continue; // already in the library
+      if (await attachFile(keptId, path)) continue; // synced, waiting for this file
       const track: Track = {
         id: keptId,
         source: kept.source,
@@ -129,9 +132,14 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
       restored.push(track);
       continue;
     }
+    const knownId = known.get(path);
+    if (knownId) {
+      found.add(knownId);
+      continue;
+    }
+    // Until its audio is hashed (sync/files), a new song's id is its path.
     const id = trackIdFor('device', path);
     found.add(id);
-    if (known.has(id)) continue;
     const { title, artist } = parseFileName(path);
     const track: Track = {
       id,
@@ -158,7 +166,7 @@ export async function scanDeviceMusic(): Promise<ScanResult> {
   }
 
   let removed = 0;
-  for (const id of known) {
+  for (const id of known.values()) {
     if (!found.has(id)) {
       await deleteTrackRow(id);
       removed++;

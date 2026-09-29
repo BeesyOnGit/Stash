@@ -93,7 +93,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ steps.version.outputs.name }}"
-          if [ -s release-notes.md ]; then NOTES=(--notes-file release-notes.md); else NOTES=(--generate-notes); fi
           # Run again for the same version: reuse the release that's there. Keep
           # exactly one per tag: the APK uploads by tag and the desktop builds by
           # ID, so with several (drafts left by failed runs) they'd split up.
@@ -105,10 +104,19 @@ jobs:
           }
           IDS=$(find_ids)
           if [ -z "$IDS" ]; then
-            gh release create "$TAG" --draft --target "${{ github.sha }}" --title "stash ${{ steps.version.outputs.name }}" "${NOTES[@]}"
-            IDS=$(find_ids)
+            # Take the new release's ID from the answer itself: the release list
+            # can lag behind a just-created draft, and an empty ID makes
+            # tauri-action build without uploading anything (still "success").
+            if [ -s release-notes.md ]; then BODY=(-F body=@release-notes.md); else BODY=(-F generate_release_notes=true); fi
+            IDS=$(gh api -X POST "repos/${{ github.repository }}/releases" \
+              -f tag_name="$TAG" -f target_commitish="${{ github.sha }}" \
+              -f name="stash ${{ steps.version.outputs.name }}" -F draft=true "${BODY[@]}" --jq .id)
           fi
           ID=$(echo "$IDS" | head -n1)
+          if [ -z "$ID" ]; then
+            echo "::error::No release ID for $TAG: the desktop builds would have nowhere to upload"
+            exit 1
+          fi
           for OLD in $(echo "$IDS" | tail -n +2); do
             if [ "$(gh api "repos/${{ github.repository }}/releases/$OLD" --jq .draft)" = "true" ]; then
               echo "Deleting leftover draft release $OLD for $TAG"
@@ -248,4 +256,7 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "v${{ needs.prepare.outputs.version }}" --repo "${{ github.repository }}" --draft=false --latest
+        # By ID: the release the desktop builds uploaded into.
+        run: >
+          gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.prepare.outputs.release_id }}"
+          -F draft=false -f make_latest=true
