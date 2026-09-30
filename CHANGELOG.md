@@ -7,6 +7,10 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.3
+
+- **Desktop app starts again after updating:** on some Windows computers, stash stopped at startup with "database error: there is already another table or index with name listens_v2" after updating to 1.3.2. It now starts normally and repairs the library on its own, and your listening stats are kept.
+
 ## 1.3.2
 
 - **Sync your phone and computer over Wi-Fi:** stash on your phone and stash on your computer now keep each other up to date, straight over your own network. No internet, no account, nothing goes through anyone else's servers.

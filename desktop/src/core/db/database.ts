@@ -43,9 +43,18 @@ function write(sql: string, params: unknown[] = []) {
 const select = <T = Row>(sql: string, params: unknown[] = []) =>
   conn().select<T[]>(sql, params);
 
-/** Statements one after another (the plugin's pool can't hold a transaction across calls). */
+/**
+ * Statements one after another, sent as one script so they run on one
+ * connection: the plugin's pool has several, and one that didn't run a schema
+ * change can still see the old schema (e.g. "already another table named
+ * listens" after a drop + rename). No transaction: the pool can't hold one.
+ */
 async function batch(statements: Statement[]) {
-  for (const [sql, params] of statements) await write(sql, params);
+  if (!statements.length) return;
+  await write(
+    statements.map(([sql]) => sql.trim().replace(/;+$/, '')).join(';\n'),
+    statements.flatMap(([, params]) => params),
+  );
 }
 
 // ---- sync (src/core/sync): stamps on every change, deletions remembered ----

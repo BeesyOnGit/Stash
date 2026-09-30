@@ -328,6 +328,30 @@ describe('migration', () => {
     expect((await dev.db.all('SELECT COUNT(*) AS n FROM listens'))[0].n).toBe(1);
   });
 
+  test('a migration stopped half way is finished on the next start', async () => {
+    const LISTENS_V1 = `CREATE TABLE listens (track_id TEXT NOT NULL, day TEXT NOT NULL,
+      hour INTEGER NOT NULL, seconds REAL NOT NULL DEFAULT 0, plays INTEGER NOT NULL DEFAULT 0,
+      title TEXT, artist TEXT, PRIMARY KEY (track_id, day, hour))`;
+    // Stopped after the copy, before the old table was dropped.
+    const before = await new Device('dev000000').init(async db => {
+      await db.run("INSERT INTO listens VALUES ('x', '2026-01-01', 9, 60, 2, 'X', null)");
+      await db.run('CREATE TABLE listens_v2 (device_id TEXT)');
+    });
+    expect((await before.db.all('SELECT seconds FROM listens'))[0].seconds).toBe(60);
+    // Stopped after the drop: the app recreated an empty old table at startup.
+    const after = await new Device('dev000000').init(async db => {
+      await db.run("INSERT INTO listens VALUES ('x', '2026-01-01', 9, 60, 2, 'X', null)");
+      await migrateSyncSchema(db, 'dev000000');
+      await db.run('ALTER TABLE listens RENAME TO listens_v2');
+      await db.run(LISTENS_V1);
+    });
+    const l = await after.db.all('SELECT * FROM listens');
+    expect(l[0].device_id).toBe('dev000000');
+    expect(l[0].seconds).toBe(60);
+    const v2 = await after.db.all("SELECT 1 FROM sqlite_master WHERE name = 'listens_v2'");
+    expect(v2.length).toBe(0);
+  });
+
   test('a scanned song gets the id of its audio, and everything follows', async () => {
     const dev = await new Device('dev000000').init();
     await dev.addTrack('device:/sdcard/a.mp3', 'A', { source: 'device', content_hash: null });

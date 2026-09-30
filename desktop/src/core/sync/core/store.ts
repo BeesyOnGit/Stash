@@ -71,9 +71,22 @@ export async function migrateSyncSchema(db: SqlDb, deviceId: string) {
     ['file_name', 'TEXT'],
     ...stamps,
   ]);
-  if (!(await columns('listens')).has('device_id')) {
+  const leftover = (
+    await db.all("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'listens_v2'")
+  ).length;
+  if ((await columns('listens')).has('device_id')) {
+    if (leftover) await db.run('DROP TABLE listens_v2');
+  } else if (leftover && !(await db.all('SELECT 1 FROM listens LIMIT 1')).length) {
+    // An earlier try stopped after dropping the old table (the app recreated
+    // it empty at startup): the copy holds the data, finish the rename.
+    await db.batch([
+      ['DROP TABLE listens', []],
+      ['ALTER TABLE listens_v2 RENAME TO listens', []],
+    ]);
+  } else {
     // The key gains the device: each device writes only its own rows.
     await db.batch([
+      ['DROP TABLE IF EXISTS listens_v2', []],
       [
         `CREATE TABLE listens_v2 (
           device_id TEXT NOT NULL,
