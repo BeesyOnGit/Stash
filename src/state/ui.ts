@@ -14,6 +14,7 @@ export type Sheet =
   | { kind: 'speed' }
   | { kind: 'sleep' }
   | { kind: 'addMany'; trackIds: string[] }
+  | { kind: 'addSongs'; playlistId: string }
   | { kind: 'similar'; track: QueueItem }
   | { kind: 'update'; release: Release };
 

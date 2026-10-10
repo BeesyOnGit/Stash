@@ -7,6 +7,14 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.4
+
+- **Add songs straight from a playlist:** open a playlist and tap **+** next to Play and Shuffle. Search your library, tick the songs you want and tap **Add**. Songs already in the playlist aren't listed.
+- **Lock screen buttons in the right order:** the lock screen showed two "previous" buttons and put "next" on the wrong side. It now shows previous, play/pause and next, like any music player.
+- **Car and headphone buttons work:** next, previous and play/pause on a car stereo, steering wheel or Bluetooth headphones now control stash.
+- **Music plays through the car with Android Auto:** stash now plays through the car's speakers when you pick a song in Android Auto. Before, it played but the car didn't switch to it. Navigation instructions no longer pause the music either: it keeps playing under them.
+- **Other music apps pause when stash plays:** starting a song in stash now pauses music playing in another app, like other music players do.
+
 ## 1.3.3
 
 - **Desktop app starts again after updating:** on some Windows computers, stash stopped at startup with "database error: there is already another table or index with name listens_v2" after updating to 1.3.2. It now starts normally and repairs the library on its own, and your listening stats are kept.

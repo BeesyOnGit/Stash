@@ -1,5 +1,24 @@
+diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/AudioFocusManager.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/AudioFocusManager.kt
+--- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/AudioFocusManager.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/AudioFocusManager.kt
+@@ -48,13 +48,9 @@ class AudioFocusManager() {
+             audioFocusRequest = null
+           }
+         }
+-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+-          val mixAudioMode = determineRequiredMixMode()
+-          when (mixAudioMode) {
+-            MixAudioMode.DONOTMIX -> pauseActivePlayers()
+-            else -> duckActivePlayers()
+-          }
+-        }
++        // A short sound over the music (a car's navigation prompt, a notification): keep
++        // playing. Pausing here never resumed, and Android 12+ lowers the volume itself.
++        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {}
+       }
+     }
+   }
 diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
-index f333014..122f078 100644
 --- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
 +++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/CustomMediaNotificationProvider.kt
 @@ -54,9 +54,18 @@ class CustomMediaNotificationProvider(context: Context) : DefaultMediaNotificati
@@ -73,42 +92,54 @@ index f333014..122f078 100644
        .build()
  
 diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
-index 25349a5..600fb0c 100644
 --- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
 +++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackCallback.kt
-@@ -16,25 +16,25 @@ class VideoPlaybackCallback : MediaSession.Callback {
-   // For Android 13+
-   private fun buildCustomButtons(): ImmutableList<CommandButton> {
-     val rewind = CommandButton.Builder()
+@@ -4,42 +4,15 @@ import android.os.Bundle
+ import androidx.annotation.OptIn
+ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+-import androidx.media3.session.CommandButton
+ import androidx.media3.session.MediaSession
+ import androidx.media3.session.SessionCommand
+ import androidx.media3.session.SessionResult
+ import com.google.common.util.concurrent.ListenableFuture
+-import com.google.common.collect.ImmutableList
+ 
+ @OptIn(UnstableApi::class)
+ class VideoPlaybackCallback : MediaSession.Callback {
+-  // For Android 13+
+-  private fun buildCustomButtons(): ImmutableList<CommandButton> {
+-    val rewind = CommandButton.Builder()
 -      .setDisplayName("Rewind")
-+      .setDisplayName("Previous")
-       .setSessionCommand(
-         SessionCommand(
+-      .setSessionCommand(
+-        SessionCommand(
 -          CustomMediaNotificationProvider.Companion.COMMAND.SEEK_BACKWARD.stringValue,
-+          CustomMediaNotificationProvider.Companion.COMMAND.PREVIOUS.stringValue,
-           Bundle.EMPTY
-         )
-       )
+-          Bundle.EMPTY
+-        )
+-      )
 -      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_back_10)
-+      .setIconResId(androidx.media3.session.R.drawable.media3_icon_previous)
-       .build()
- 
-     val forward = CommandButton.Builder()
+-      .build()
+-
+-    val forward = CommandButton.Builder()
 -      .setDisplayName("Forward")
-+      .setDisplayName("Next")
-       .setSessionCommand(
-         SessionCommand(
+-      .setSessionCommand(
+-        SessionCommand(
 -          CustomMediaNotificationProvider.Companion.COMMAND.SEEK_FORWARD.stringValue,
-+          CustomMediaNotificationProvider.Companion.COMMAND.NEXT.stringValue,
-           Bundle.EMPTY
-         )
-       )
+-          Bundle.EMPTY
+-        )
+-      )
 -      .setIconResId(androidx.media3.session.R.drawable.media3_icon_skip_forward_10)
-+      .setIconResId(androidx.media3.session.R.drawable.media3_icon_next)
-       .build()
- 
-     return ImmutableList.of(rewind, forward)
-@@ -67,6 +67,18 @@ class VideoPlaybackCallback : MediaSession.Callback {
+-      .build()
+-
+-    return ImmutableList.of(rewind, forward)
+-  }
+-
++  // No custom layout: the session's player (QueuePlayer) offers ⏮ ⏭ itself, so lock screens
++  // and Bluetooth show them in their usual places instead of next to a second ⏮.
+   override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+     try {
+       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+@@ -67,6 +40,18 @@ class VideoPlaybackCallback : MediaSession.Callback {
                  CustomMediaNotificationProvider.Companion.COMMAND.TOGGLE_PLAY.stringValue,
                  Bundle.EMPTY
                )
@@ -127,13 +158,35 @@ index 25349a5..600fb0c 100644
              ).build()
          ).build()
      } catch (e: Exception) {
+@@ -74,11 +59,6 @@ class VideoPlaybackCallback : MediaSession.Callback {
+     }
+   }
+ 
+-  override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+-    session.setCustomLayout(buildCustomButtons())
+-    super.onPostConnect(session, controller)
+-  }
+-
+   override fun onCustomCommand(
+       session: MediaSession,
+       controller: MediaSession.ControllerInfo,
 diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
 --- a/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
 +++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/core/services/playback/VideoPlaybackService.kt
-@@ -126,6 +126,20 @@ class VideoPlaybackService : MediaSessionService() {
+@@ -12,6 +12,8 @@ import android.util.Log
+ import androidx.annotation.MainThread
+ import androidx.annotation.OptIn
+ import androidx.core.app.NotificationCompat
++import androidx.media3.common.ForwardingPlayer
++import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+ import androidx.media3.session.MediaSession
+ import androidx.media3.session.MediaSessionService
+@@ -126,7 +128,21 @@ class VideoPlaybackService : MediaSessionService() {
    private fun ensurePlayerSession(player: HybridVideoPlayer) {
      if (mediaSessionsList.containsKey(player)) return
  
+-    val builder = MediaSession.Builder(this, player.player)
 +    // Hand the existing session to the new player (the next song taking over, while the last
 +    // moments of the previous one may still be playing) instead of adding a second session:
 +    // releasing a session cancels the shared notification and the foreground state, even
@@ -143,11 +196,58 @@ diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video
 +    }
 +    if (handover != null) {
 +      mediaSessionsList.remove(handover.key)
-+      handover.value.player = player.player
++      handover.value.player = QueuePlayer(player.player)
 +      mediaSessionsList[player] = handover.value
 +      return
 +    }
 +
-     val builder = MediaSession.Builder(this, player.player)
++    val builder = MediaSession.Builder(this, QueuePlayer(player.player))
        .setId("RNVideoPlaybackService_" + player.hashCode())
        .setCallback(VideoPlaybackCallback())
+ 
+@@ -202,3 +218,32 @@ class VideoPlaybackService : MediaSessionService() {
+       .build()
+   }
+ }
++
++/**
++ * The session's view of a player: one song, but ⏮ ⏭ always on offer and moving through the
++ * app's queue (CustomMediaNotificationProvider.onSkip). Lock screens, Bluetooth headsets and
++ * car stereos only use these standard commands, not the notification's own buttons.
++ */
++@OptIn(UnstableApi::class)
++private class QueuePlayer(player: Player) : ForwardingPlayer(player) {
++  override fun getAvailableCommands(): Player.Commands =
++    super.getAvailableCommands().buildUpon()
++      .addAll(
++        COMMAND_SEEK_TO_PREVIOUS,
++        COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
++        COMMAND_SEEK_TO_NEXT,
++        COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
++      )
++      .build()
++
++  override fun isCommandAvailable(command: Int) = availableCommands.contains(command)
++
++  override fun seekToPrevious() = skip("previous") { super.seekBack() }
++  override fun seekToPreviousMediaItem() = skip("previous") { super.seekBack() }
++  override fun seekToNext() = skip("next") { super.seekForward() }
++  override fun seekToNextMediaItem() = skip("next") { super.seekForward() }
++
++  private inline fun skip(type: String, fallback: () -> Unit) {
++    if (CustomMediaNotificationProvider.onSkip?.invoke(type) != true) fallback()
++  }
++}
+diff --git a/node_modules/react-native-video/android/src/main/java/com/twg/video/hybrids/videoplayer/HybridVideoPlayer.kt b/node_modules/react-native-video/android/src/main/java/com/twg/video/hybrids/videoplayer/HybridVideoPlayer.kt
+--- a/node_modules/react-native-video/android/src/main/java/com/twg/video/hybrids/videoplayer/HybridVideoPlayer.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/twg/video/hybrids/videoplayer/HybridVideoPlayer.kt
+@@ -530,6 +530,9 @@ class HybridVideoPlayer() : HybridVideoPlayerSpec(), AutoCloseable {
+         )
+       )
+       if (isPlaying) {
++        // Take audio focus as playback starts: without it Android Auto never switches the car
++        // to the phone's music, and other apps keep playing.
++        VideoManager.audioFocusManager.requestAudioFocusUpdate()
+         VideoManager.setLastPlayedPlayer(this@HybridVideoPlayer)
+         startProgressUpdates()
+       } else {

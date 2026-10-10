@@ -68,7 +68,7 @@ export default defineStrings({
     'library.emptyMost': 'Songs you listen to show up here.',
     'library.emptySaved': 'Songs you save show up here.',
     'library.emptyPlaylist':
-      'No songs yet. Use the ••• menu on any song, or the add button in the player.',
+      'No songs yet. Tap + above to add some, or use the ••• menu on any song.',
     'library.dragToReorder': 'Drag to reorder',
     // Saving
     'library.savingTitle': 'Saving',
@@ -175,7 +175,7 @@ export default defineStrings({
     'library.emptyMost': 'Les titres que tu écoutes apparaissent ici.',
     'library.emptySaved': 'Les titres que tu enregistres apparaissent ici.',
     'library.emptyPlaylist':
-      'Aucun titre pour l’instant. Utilise le menu ••• d’un titre, ou le bouton d’ajout dans le lecteur.',
+      'Aucun titre pour l’instant. Touche + ci-dessus pour en ajouter, ou utilise le menu ••• d’un titre.',
     'library.dragToReorder': 'Glisser pour réorganiser',
     'library.savingTitle': 'Enregistrement',
     'library.offlineStorage': 'Stockage hors ligne',
@@ -297,7 +297,7 @@ export default defineStrings({
     'library.emptyMost': 'تظهر هنا الأغاني التي تستمع إليها.',
     'library.emptySaved': 'تظهر هنا الأغاني التي تحفظها.',
     'library.emptyPlaylist':
-      'لا توجد أغانٍ بعد. استخدم قائمة ••• في أي أغنية، أو زر الإضافة في المشغّل.',
+      'لا توجد أغانٍ بعد. اضغط + في الأعلى لإضافة أغانٍ، أو استخدم قائمة ••• في أي أغنية.',
     'library.dragToReorder': 'اسحب لإعادة الترتيب',
     'library.savingTitle': 'الحفظ',
     'library.offlineStorage': 'التخزين دون اتصال',
@@ -409,7 +409,7 @@ export default defineStrings({
     'library.emptyMost': 'Aquí aparecen las canciones que escuchas.',
     'library.emptySaved': 'Aquí aparecen las canciones que guardas.',
     'library.emptyPlaylist':
-      'Aún no hay canciones. Usa el menú ••• de cualquier canción, o el botón de añadir en el reproductor.',
+      'Aún no hay canciones. Toca + arriba para añadir, o usa el menú ••• de cualquier canción.',
     'library.dragToReorder': 'Arrastra para reordenar',
     'library.savingTitle': 'Guardando',
     'library.offlineStorage': 'Almacenamiento sin conexión',
@@ -519,7 +519,7 @@ export default defineStrings({
     'library.emptyMost': 'Songs, die du hörst, erscheinen hier.',
     'library.emptySaved': 'Songs, die du speicherst, erscheinen hier.',
     'library.emptyPlaylist':
-      'Noch keine Songs. Nutze das •••-Menü bei einem Song oder den Hinzufügen-Button im Player.',
+      'Noch keine Songs. Tippe oben auf +, um welche hinzuzufügen, oder nutze das •••-Menü bei einem Song.',
     'library.dragToReorder': 'Ziehen zum Umsortieren',
     'library.savingTitle': 'Speichern',
     'library.offlineStorage': 'Offline-Speicher',

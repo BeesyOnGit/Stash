@@ -71,6 +71,9 @@ export function Sheets() {
       {sheet?.kind === 'speed' && <SpeedSheet />}
       {sheet?.kind === 'sleep' && <SleepSheet />}
       {sheet?.kind === 'addMany' && <AddManySheet trackIds={sheet.trackIds} />}
+      {sheet?.kind === 'addSongs' && (
+        <AddSongsSheet playlistId={sheet.playlistId} />
+      )}
       {sheet?.kind === 'similar' && <SimilarSheet track={sheet.track} />}
       {sheet?.kind === 'update' && <UpdateSheet release={sheet.release} />}
     </Sheet>
@@ -462,6 +465,118 @@ function AddManySheet({ trackIds }: { trackIds: string[] }) {
             onPress={() => addTo(p.id, p.name)}
           />
         ))}
+      </View>
+    </View>
+  );
+}
+
+/** From a playlist's screen: pick library songs that aren't in it yet. */
+function AddSongsSheet({ playlistId }: { playlistId: string }) {
+  const t = useTheme();
+  const { tracks, playlists } = useLibrary();
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const pl = playlists.find(p => p.id === playlistId);
+  if (!pl) return null;
+
+  const inList = new Set(pl.trackIds);
+  const q = query.trim().toLowerCase();
+  // ponytail: first 200 matches only (the sheet isn't virtualized); typing narrows it down.
+  const shown = tracks
+    .filter(
+      x =>
+        x.status !== 'streaming' &&
+        !inList.has(x.id) &&
+        (!q ||
+          `${x.title} ${x.artist ?? ''} ${x.album ?? ''}`
+            .toLowerCase()
+            .includes(q)),
+    )
+    .slice(0, 200);
+
+  const toggle = (id: string) =>
+    setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
+  const add = async () => {
+    if (!picked.length) return;
+    const added = await addTracksToPlaylist(playlistId, picked);
+    closeSheet();
+    toast(tr('sheets.addedSongsTo', { count: added, name: pl.name }));
+  };
+
+  return (
+    <View>
+      <View style={styles.pad}>
+        <Text style={[font(700, 20), { color: t.ink, letterSpacing: -0.2 }]}>
+          {tr('sheets.addSongs')}
+        </Text>
+        <Text style={[font(400, 13), styles.mt3, { color: t.muted }]}>
+          {pl.name}
+        </Text>
+        <View style={styles.createRow}>
+          <NameInput
+            value={query}
+            onChange={setQuery}
+            placeholder={tr('sheets.searchYourSongs')}
+          />
+          <Pressable
+            onPress={add}
+            style={[
+              styles.createBtn,
+              { backgroundColor: picked.length ? t.ink : t.muted2 },
+            ]}
+          >
+            <Text style={[font(600, 14), { color: t.onInk }]}>
+              {picked.length
+                ? `${tr('sheets.add')} (${picked.length})`
+                : tr('sheets.add')}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+      {!shown.length && (
+        <Text style={[font(400, 14), styles.endText, styles.mt10, { color: t.muted }]}>
+          {tr('sheets.nothingToAdd')}
+        </Text>
+      )}
+      <View style={styles.mt10}>
+        {shown.map(x => {
+          const on = picked.includes(x.id);
+          return (
+            <Pressable
+              key={x.id}
+              onPress={() => toggle(x.id)}
+              style={({ pressed }) => [
+                styles.pick,
+                pressed && { backgroundColor: t.fill },
+              ]}
+            >
+              <Cover
+                uri={artworkUri(x)}
+                size={46}
+                radius={10}
+                bg={paletteFor(x).artBg}
+              />
+              <View style={styles.flex}>
+                <Text numberOfLines={1} style={[font(500, 15), { color: t.ink }]}>
+                  {x.title}
+                </Text>
+                <Text numberOfLines={1} style={[font(400, 12), { color: t.muted }]}>
+                  {x.artist ?? tr('common.unknownArtist')}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.check,
+                  on
+                    ? { backgroundColor: t.ink }
+                    : { borderWidth: 2, borderColor: t.line2 },
+                ]}
+              >
+                {on && <CheckIcon color={t.onInk} />}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );

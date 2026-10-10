@@ -20,7 +20,13 @@ import { smartListName, smartTracks } from '../services/smartLists';
 import { openSheet, toast } from '../state/ui';
 import { eyebrow, font, genreColors, paletteFor, useTheme } from '../theme';
 import { artworkUri, type Track } from '../types';
-import { ChevronLeftIcon, GripIcon, PlayIcon, ShuffleIcon } from '../ui/icons';
+import {
+  ChevronLeftIcon,
+  GripIcon,
+  PlayIcon,
+  PlusIcon,
+  ShuffleIcon,
+} from '../ui/icons';
 import { CoverGrid, Note } from '../ui/primitives';
 import { Pressable } from '../ui/Pressable';
 import { useReorder } from '../ui/reorder';
@@ -177,6 +183,15 @@ export function CollectionScreen({ route, navigation }: Props) {
               {tr('common.shuffle')}
             </Text>
           </Pressable>
+          {playlistId && (
+            <Pressable
+              onPress={() => openSheet({ kind: 'addSongs', playlistId })}
+              accessibilityLabel={tr('sheets.addSongs')}
+              style={[styles.btn, styles.addBtn, { backgroundColor: t.glass }]}
+            >
+              <PlusIcon color={t.ink} />
+            </Pressable>
+          )}
         </View>
       </View>
       {!list.length && (
@@ -300,6 +315,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  addBtn: { flex: 0, width: 44 },
   empty: { margin: 20 },
   delete: {
     paddingHorizontal: 20,
