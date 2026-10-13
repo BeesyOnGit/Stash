@@ -26,6 +26,7 @@ import { ensureWaveform } from '../services/waveform';
 import { estimateBytes, fitsInStorage } from '../services/storage';
 import { sourceFor, sourceName } from '../sources';
 import { tr } from '../i18n';
+import type { HuddleRemote } from '../huddle/core';
 import { toast } from '../state/ui';
 import {
   artworkUri,
@@ -205,7 +206,7 @@ class PlayerServiceImpl {
     const p = new VideoPlayer(config);
     p.mixAudioMode = 'doNotMix'; // pause other music apps, like a normal music player
     // ExoPlayer keeps the speed across songs (iOS applies it in play()).
-    if (Platform.OS !== 'ios') p.rate = getSettings().playbackSpeed;
+    if (Platform.OS !== 'ios') p.rate = this.speed();
     const mine = () => p === this.player;
 
     p.addEventListener(
@@ -361,7 +362,7 @@ class PlayerServiceImpl {
     }
     this.applyLoop();
     if (token !== this.loadToken) return;
-    if (autoplay) this.play();
+    if (autoplay) this.localPlay();
   }
 
   /** The queue, progress and library bookkeeping for the song now loaded. */
@@ -394,6 +395,7 @@ class PlayerServiceImpl {
    * and online songs don't wait for their stream URL.
    */
   private maybePreload() {
+    if (this.remote) return;
     const { position, duration } = this.progress;
     if (
       !PRELOAD ||
@@ -414,6 +416,7 @@ class PlayerServiceImpl {
    * early enough for its first sound to follow the end of this one.
    */
   private maybeStartNextOnTime(position: number) {
+    if (this.remote) return;
     const pre = this.preloaded;
     const left = this.secondsLeft(position);
     const fade = this.crossfadeLength();
@@ -629,6 +632,7 @@ class PlayerServiceImpl {
     shuffle = this.state.shuffle,
     dir: MoveDir = 0,
   ) {
+    if (this.inHuddle()) return;
     if (!tracks.length) return;
     this.moveDir = dir;
     const start = tracks[startIndex] ?? tracks[0];
@@ -685,6 +689,7 @@ class PlayerServiceImpl {
     ctx = tr('system.ctxSearch', { source: sourceName(result.source) }),
     dir: MoveDir = 0,
   ) {
+    if (this.inHuddle()) return;
     const id = trackIdFor(result.source, result.sourceId);
     const existing = await getTrack(id);
     if (existing) return this.playQueue([existing], 0, ctx, false, dir);
@@ -766,6 +771,7 @@ class PlayerServiceImpl {
 
   /** Insert a song right after the current one. */
   playNext(item: QueueItem) {
+    if (this.inHuddle()) return;
     if (!this.current) {
       this.playQueue([item], 0, tr('system.ctxLibrary'), false);
       return;
@@ -786,6 +792,7 @@ class PlayerServiceImpl {
 
   /** Adds a song at the end of the queue (moves it there if it's already coming up). */
   addToQueue(item: QueueItem) {
+    if (this.inHuddle()) return;
     const cur = this.current;
     if (!cur) {
       this.playQueue([item], 0, tr('system.ctxLibrary'), false);
@@ -809,6 +816,7 @@ class PlayerServiceImpl {
 
   /** Moves a song in the queue (the Queue sheet's drag handles). */
   moveInQueue(from: number, to: number) {
+    if (this.inHuddle()) return;
     const { queue, index, shuffle } = this.state;
     if (from === to || !queue[from] || !queue[to]) return;
     const cur = queue[index];
@@ -825,6 +833,7 @@ class PlayerServiceImpl {
 
   /** Takes a song out of the queue only (it stays in the library). */
   removeFromQueueOnly(id: string) {
+    if (this.inHuddle()) return;
     const { queue, index } = this.state;
     const i = queue.findIndex(t => t.id === id);
     if (i < 0 || i === index) return;
@@ -847,7 +856,7 @@ class PlayerServiceImpl {
 
   // ---------- transport ----------
 
-  play() {
+  localPlay() {
     const p = this.player;
     this.wantsToPlay = true;
     // Time ran out while paused: don't pause again on the first tick.
@@ -866,7 +875,7 @@ class PlayerServiceImpl {
     }
     // iOS: AVPlayer starts at 1× unless told otherwise (and setting a rate while
     // paused would start playback, so it's only applied once playing).
-    const speed = getSettings().playbackSpeed;
+    const speed = this.speed();
     if (Platform.OS === 'ios' && speed !== 1) p.rate = speed;
     // The native player can be torn down behind our back (e.g. the app swiped
     // away from recents stops the playback service). If nothing starts, rebuild it.
@@ -925,7 +934,7 @@ class PlayerServiceImpl {
   setSpeed(speed: number) {
     saveSettings({ playbackSpeed: speed });
     if (this.player && (Platform.OS !== 'ios' || this.state.isPlaying)) {
-      this.player.rate = speed;
+      this.player.rate = this.speed();
     }
     if (this.preloaded && Platform.OS !== 'ios') {
       this.preloaded.player.rate = speed;
@@ -937,7 +946,7 @@ class PlayerServiceImpl {
     const i = SPEEDS.indexOf(getSettings().playbackSpeed);
     this.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
   }
-  pause() {
+  localPause() {
     this.wantsToPlay = false;
     this.saveListening();
     this.finishCrossfade();
@@ -949,17 +958,75 @@ class PlayerServiceImpl {
       this.setState({ isPlaying: false });
     }
   }
+  // ---------- huddle: the room drives the player ----------
+
+  /** While in a huddle, the transport buttons go to the room instead (see huddle/core). */
+  private remote: HuddleRemote | null = null;
+
+  setRemote(remote: HuddleRemote | null) {
+    this.remote = remote;
+    if (this.player) this.applySpeedNow();
+  }
+
+  /** Everyone in a huddle plays at 1×, or they'd drift apart. */
+  private speed() {
+    return this.remote ? 1 : getSettings().playbackSpeed;
+  }
+
+  private applySpeedNow() {
+    if (this.player && (Platform.OS !== 'ios' || this.state.isPlaying))
+      this.player.rate = this.speed();
+  }
+
+  /** Something other than the huddle wants to play: not while you're in one. */
+  private inHuddle() {
+    if (!this.remote) return false;
+    toast(tr('huddle.leaveFirst'));
+    return true;
+  }
+
+  /** The huddle's songs as the queue, `index` loaded and paused, ready for the room's start. */
+  async huddleLoad(items: QueueItem[], index: number, contextName: string) {
+    this.moveDir = 0;
+    this.setState({ context: items, queue: items, index, contextName, shuffle: false, radio: false });
+    await this.load(index, false);
+  }
+
+  play() {
+    if (this.remote) this.remote.play();
+    else this.localPlay();
+  }
+
+  pause() {
+    if (this.remote) this.remote.pause();
+    else this.localPause();
+  }
+
+  seekTo(seconds: number) {
+    if (this.remote) this.remote.seek(seconds);
+    else this.localSeek(seconds);
+  }
+
   togglePlay() {
+    if (this.remote) {
+      if (this.state.isPlaying) this.remote.pause();
+      else this.remote.play();
+      return;
+    }
     if (this.nativePlaying()) this.pause();
     else this.play();
   }
 
-  seekTo(seconds: number) {
+  localSeek(seconds: number) {
     this.player?.seekTo(seconds);
     this.setProgress({ ...this.progress, position: seconds });
   }
 
   async next(auto = false) {
+    if (this.remote) {
+      if (!auto) this.remote.next();
+      return;
+    }
     const { queue, index, repeat, shuffle } = this.state;
     if (!queue.length) return;
     let n = index + 1;
@@ -982,6 +1049,7 @@ class PlayerServiceImpl {
   }
 
   async previous() {
+    if (this.remote) return this.remote.previous();
     // Like every music player: restart the song unless it just started.
     if (this.progress.position > 3 || this.state.index <= 0) {
       this.seekTo(0);
@@ -993,6 +1061,7 @@ class PlayerServiceImpl {
 
   /** The song before this one, even well into the song (swiping the cover). */
   async previousSong() {
+    if (this.remote) return this.remote.previous();
     if (this.state.index <= 0) {
       this.seekTo(0);
       return;
@@ -1002,6 +1071,7 @@ class PlayerServiceImpl {
   }
 
   async skipTo(index: number) {
+    if (this.remote) return this.remote.skipTo(index);
     this.moveDir =
       index > this.state.index ? 1 : index < this.state.index ? -1 : 0;
     await this.load(index);
@@ -1178,6 +1248,7 @@ class PlayerServiceImpl {
    * whenever the queue runs out, until turned off.
    */
   async startRadio(first: { track?: Track; result?: OnlineResult }) {
+    if (this.inHuddle()) return;
     this.radioPlayed.clear();
     this.setState({ radio: true });
     toast(tr('system.radioOn'));
@@ -1323,6 +1394,10 @@ class PlayerServiceImpl {
    * which waits on JS timers that Android pauses in the background (whileAway).
    */
   private onTrackEnded() {
+    if (this.remote) {
+      this.remote.ended();
+      return;
+    }
     whileAway(async () => {
       const sleep = this.state.sleep;
       if (sleep && 'endOfSong' in sleep) {

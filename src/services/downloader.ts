@@ -61,7 +61,7 @@ export const onDownloadFinished = (fn: FinishedListener) => {
   };
 };
 
-function extensionFor(mimeType: string | null, url: string): string {
+export function extensionFor(mimeType: string | null, url: string): string {
   if (
     mimeType?.includes('mp4') ||
     mimeType?.includes('m4a') ||
@@ -73,6 +73,60 @@ function extensionFor(mimeType: string | null, url: string): string {
   if (mimeType?.includes('ogg') || mimeType?.includes('opus')) return 'ogg';
   const m = url.split('?')[0].match(/\.(\w{2,4})$/);
   return m ? m[1] : 'audio';
+}
+
+/**
+ * Downloads a resolved stream into `path` (ranged chunks appended via `part`
+ * for sources that throttle one big request). Also used by the huddle cache.
+ */
+export async function fetchStream(
+  stream: ResolvedStream,
+  path: string,
+  part: string,
+  onProgress: (p: number) => void,
+  job: Job = { task: null, cancelled: false },
+): Promise<void> {
+  /** One HTTP GET into `dest`; reports bytes received. Returns the HTTP status. */
+  const fetchTo = async (
+    dest: string,
+    headers: Record<string, string>,
+    onBytes: (received: number, total: number) => void,
+  ) => {
+    if (job.cancelled) throw new Error('Cancelled');
+    const task = ReactNativeBlobUtil.config({
+      path: dest,
+      overwrite: true,
+    }).fetch('GET', stream.url, headers);
+    job.task = task;
+    task.progress({ interval: 300 }, (r, t) => onBytes(Number(r), Number(t)));
+    const res = await task;
+    return res.info().status;
+  };
+  const headers = stream.headers ?? {};
+  const total = stream.contentLength ?? 0;
+  if (stream.chunked && total > 0) {
+    // Ranged chunks appended into one file: full speed, and the saved file is
+    // exactly the original audio stream (no re-encoding).
+    for (let start = 0; start < total; start += CHUNK_BYTES) {
+      const end = Math.min(total - 1, start + CHUNK_BYTES - 1);
+      const status = await fetchTo(
+        start === 0 ? path : part,
+        { ...headers, Range: `bytes=${start}-${end}` },
+        r => onProgress((start + r) / total),
+      );
+      if (status === 200) break; // server ignored the range and sent everything
+      if (status !== 206) throw new Error(`Download failed (HTTP ${status})`);
+      if (start > 0) {
+        await ReactNativeBlobUtil.fs.appendFile(path, part, 'uri');
+        await removeFile(part);
+      }
+    }
+  } else {
+    const status = await fetchTo(path, headers, (r, t) =>
+      onProgress(t > 0 ? r / t : 0),
+    );
+    if (status >= 400) throw new Error(`Download failed (HTTP ${status})`);
+  }
 }
 
 export async function downloadTrack(
@@ -97,53 +151,11 @@ export async function downloadTrack(
   progress.set(track.id, 0);
   emit();
 
-  /** One HTTP GET into `dest`; reports bytes received. Returns the HTTP status. */
-  const fetchTo = async (
-    dest: string,
-    headers: Record<string, string>,
-    onBytes: (received: number, total: number) => void,
-  ) => {
-    if (job.cancelled) throw new Error('Cancelled');
-    const task = ReactNativeBlobUtil.config({
-      path: dest,
-      overwrite: true,
-    }).fetch('GET', stream.url, headers);
-    job.task = task;
-    task.progress({ interval: 300 }, (r, t) => onBytes(Number(r), Number(t)));
-    const res = await task;
-    return res.info().status;
-  };
-  const setProgress = (p: number) => {
-    progress.set(track.id, Math.min(1, p));
-    emit();
-  };
-
   try {
-    const headers = stream.headers ?? {};
-    const total = stream.contentLength ?? 0;
-    if (stream.chunked && total > 0) {
-      // Ranged chunks appended into one file: full speed, and the saved file is
-      // exactly the original audio stream (no re-encoding).
-      for (let start = 0; start < total; start += CHUNK_BYTES) {
-        const end = Math.min(total - 1, start + CHUNK_BYTES - 1);
-        const status = await fetchTo(
-          start === 0 ? path : part,
-          { ...headers, Range: `bytes=${start}-${end}` },
-          r => setProgress((start + r) / total),
-        );
-        if (status === 200) break; // server ignored the range and sent everything
-        if (status !== 206) throw new Error(`Download failed (HTTP ${status})`);
-        if (start > 0) {
-          await ReactNativeBlobUtil.fs.appendFile(path, part, 'uri');
-          await removeFile(part);
-        }
-      }
-    } else {
-      const status = await fetchTo(path, headers, (r, t) =>
-        setProgress(t > 0 ? r / t : 0),
-      );
-      if (status >= 400) throw new Error(`Download failed (HTTP ${status})`);
-    }
+    await fetchStream(stream, path, part, p => {
+      progress.set(track.id, Math.min(1, p));
+      emit();
+    }, job);
     // Opus/WebM or Ogg from YouTube's fallback → M4A like every other download.
     if (needsConversion(path)) {
       path = (await convertToM4a(path, folder)) ?? path;
