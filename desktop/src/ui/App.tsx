@@ -26,7 +26,9 @@ import {
   SquareIcon,
   StatsIcon,
 } from './icons';
+import { HuddleScreen } from './HuddleScreen';
 import { KaraokeScreen } from './KaraokeScreen';
+import { useHuddle } from '../core/huddle';
 import { ACCENT, CoverGrid } from './kit';
 import { FullScreenPlayer } from './player/FullScreenPlayer';
 import { NowPlayingPanel } from './player/NowPlayingPanel';
@@ -146,6 +148,7 @@ export function App() {
           <NowPlayingPanel width={layout.panel} onResize={e => resize(e, 'panel')} onResetSize={() => saveLayout({ ...layout, panel: PANEL_DEFAULT })} grip={resizing === 'panel'} />
         )}
       </div>
+      {app.huddle && <HuddleScreen />}
       <PlayerBar />
       {cur && app.fullScreen && <FullScreenPlayer />}
       {app.karaoke && <KaraokeScreen key={app.karaoke} trackId={app.karaoke} />}
@@ -234,7 +237,8 @@ function TitleBar({ logoW, searchRef }: { logoW: number; searchRef: React.RefObj
 }
 
 function Sidebar({ width, onResize, onReset, grip }: { width: number; onResize: (e: RPointerEvent) => void; onReset: () => void; grip: boolean }) {
-  const { tab, detail } = useApp();
+  const { tab, detail, huddle: huddleOpen } = useApp();
+  const room = useHuddle().room;
   const { tracks, playlists, byId } = useLibrary();
   const dark = useSettings().theme === 'dark';
   useDownloads();
@@ -289,6 +293,20 @@ function Sidebar({ width, onResize, onReset, grip }: { width: number; onResize: 
           )}
         </button>
       ))}
+      <button
+        className="h-fill"
+        onClick={() => setApp({ huddle: true, fullScreen: false })}
+        style={{ position: 'relative', border: 0, height: 38, borderRadius: 10, background: huddleOpen ? 'var(--fill2)' : 'transparent', color: huddleOpen ? 'var(--ink)' : 'var(--muted2)', display: 'flex', alignItems: 'center', gap: 12, padding: '0 12px', cursor: 'pointer', font: "500 14px 'Geist',sans-serif", textAlign: 'start' }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8" /><path d="M16 5.2a3 3 0 010 5.6M17.5 14.4c1.7.6 2.8 2.2 3.1 4.6" /></svg>
+        <span style={{ color: 'var(--ink)' }}>{tr('huddle.nav')}</span>
+        {room && (
+          <span className="mono" style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 5, height: 18, padding: '0 7px', borderRadius: 9, background: ACCENT, color: '#fff', font: "600 11px 'Geist Mono',monospace" }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
+            {room.members.length}
+          </span>
+        )}
+      </button>
       <div style={{ margin: '18px 12px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span className="eyebrow" style={{ fontSize: 11 }}>{tr('desktop.playlists')}</span>
         <button className="h-fill2" onClick={() => openSheet({ kind: 'new' })} title={tr('library.newPlaylist')} style={{ width: 24, height: 24, border: 0, borderRadius: 6, background: 'transparent', color: 'var(--muted)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>

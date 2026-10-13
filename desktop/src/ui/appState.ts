@@ -28,6 +28,8 @@ export interface AppState {
   /** Library multi-select. */
   selecting: boolean;
   selected: string[];
+  /** The Huddle lobby or room, over everything below the title bar. */
+  huddle: boolean;
 }
 
 let state: AppState = {
@@ -41,6 +43,7 @@ let state: AppState = {
   karaoke: null,
   selecting: false,
   selected: [],
+  huddle: false,
 };
 const listeners = new Set<() => void>();
 
@@ -62,8 +65,8 @@ export const useApp = () =>
   );
 
 export const openCollection = (detail: Collection) =>
-  setApp({ tab: 'library', detail, fullScreen: false, karaoke: null });
+  setApp({ tab: 'library', detail, fullScreen: false, karaoke: null, huddle: false });
 export const goTab = (tab: Tab) =>
-  setApp({ tab, detail: null, selecting: false, selected: [], karaoke: null, fullScreen: false });
+  setApp({ tab, detail: null, selecting: false, selected: [], karaoke: null, fullScreen: false, huddle: false });
 export const openKaraoke = (trackId: string) =>
   setApp({ karaoke: trackId, fullScreen: false });

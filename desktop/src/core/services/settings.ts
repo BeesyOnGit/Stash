@@ -57,6 +57,8 @@ export interface Settings {
   hapticStrength: HapticStrength;
   /** App language; "system" follows the phone (English if we don't have it). */
   language: LanguagePref;
+  /** The name others see in a huddle. */
+  huddleName: string;
 }
 
 export type HapticStrength = 'light' | 'medium' | 'strong';
@@ -105,6 +107,7 @@ const DEFAULTS: Settings = {
   haptics: true,
   hapticStrength: 'medium',
   language: 'system',
+  huddleName: '',
 };
 
 let cache: Settings | null = null;
