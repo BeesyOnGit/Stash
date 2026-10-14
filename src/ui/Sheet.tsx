@@ -19,7 +19,7 @@ import { Pressable } from './Pressable';
  * edge to edge, so Android doesn't resize it for the keyboard; we lift the card
  * ourselves instead.
  */
-function useKeyboardHeight() {
+export function useKeyboardHeight() {
   const [height, setHeight] = useState(0);
   useEffect(() => {
     const ios = Platform.OS === 'ios';

@@ -59,6 +59,10 @@ export interface Settings {
   language: LanguagePref;
   /** The name others see in a huddle. */
   huddleName: string;
+  /** Your colour in a huddle (index in HUDDLE_COLORS). */
+  huddleColor: number;
+  /** This install's id in huddles, made once: you stay the same member when you reconnect. */
+  huddleId: string;
 }
 
 export type HapticStrength = 'light' | 'medium' | 'strong';
@@ -108,6 +112,8 @@ const DEFAULTS: Settings = {
   hapticStrength: 'medium',
   language: 'system',
   huddleName: '',
+  huddleColor: 0,
+  huddleId: '',
 };
 
 let cache: Settings | null = null;

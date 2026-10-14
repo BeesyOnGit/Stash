@@ -8,6 +8,7 @@ import { PlayerService } from '../player/PlayerService';
 import { extensionFor, fetchStream } from '../services/downloader';
 import { whileAway } from '../services/keepAlive';
 import { safeFileName } from '../services/paths';
+import { getSettings, saveSettings } from '../services/settings';
 import { sourceFor } from '../sources';
 import type { OnlineResult, QueueItem, TrackSource } from '../types';
 import { createHuddle, type SharedTrack } from './core';
@@ -45,6 +46,11 @@ function toItem(t: SharedTrack, path: string | null): QueueItem {
 
 export const huddle = createHuddle({
   serverUrl: () => HUDDLE_SERVER,
+  deviceId() {
+    let id = getSettings().huddleId;
+    if (!id) saveSettings({ huddleId: (id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`) });
+    return id;
+  },
   async cache(t, onProgress) {
     const saved = await getTrack(t.key);
     if (saved?.status === 'ready' && saved.filePath) return saved.filePath;
@@ -99,3 +105,7 @@ AppState.addEventListener('change', async s => {
   }
   holding = false;
 });
+
+/** Keeps a huddle song: saved into the library like any song found online. */
+// ponytail: downloads it again rather than moving the huddle cache copy; move it if data use matters
+export const saveToLibrary = (t: SharedTrack) => PlayerService.saveOffline(toItem(t, null));

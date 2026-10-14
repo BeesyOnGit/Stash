@@ -24,7 +24,7 @@ async fn run_member(mut socket: WebSocket, q: WsQuery) {
     let (tx, mut rx) = unbounded_channel::<String>();
 
     // Join or create, under the lock; nothing awaits while it's held.
-    let joined: Result<(String, String), &'static str> = {
+    let joined: Result<(String, String, u64), &'static str> = {
         let mut rooms = ROOMS.lock().unwrap();
         let code = match (&q.code, &q.create) {
             (Some(c), _) => Ok(c.trim().to_uppercase()),
@@ -40,13 +40,13 @@ async fn run_member(mut socket: WebSocket, q: WsQuery) {
             None => Err("not_found"),
             Some(r) if r.members.len() >= MAX_MEMBERS => Err("full"),
             Some(r) => {
-                let id = r.add_member(&q.name, tx);
+                let (id, conn) = r.add_member(q.id.as_deref(), &q.name, q.color, tx);
                 r.broadcast_state();
-                Ok((code, id))
+                Ok((code, id, conn))
             }
         })
     };
-    let (code, me) = match joined {
+    let (code, me, conn) = match joined {
         Ok(j) => j,
         Err(message) => {
             let _ = socket.send(Message::Text(to_json(&ServerMsg::Error { message }).into())).await;
@@ -56,7 +56,7 @@ async fn run_member(mut socket: WebSocket, q: WsQuery) {
     // The welcome goes before the state queued by broadcast_state above.
     let welcome = to_json(&ServerMsg::Welcome { you: &me, code: &code });
     if socket.send(Message::Text(welcome.into())).await.is_err() {
-        leave(&code, &me);
+        leave(&code, &me, conn);
         return;
     }
 
@@ -88,13 +88,13 @@ async fn run_member(mut socket: WebSocket, q: WsQuery) {
             }
         }
     }
-    leave(&code, &me);
+    leave(&code, &me, conn);
 }
 
-fn leave(code: &str, me: &str) {
+fn leave(code: &str, me: &str, conn: u64) {
     let mut rooms = ROOMS.lock().unwrap();
     let Some(room) = rooms.get_mut(code) else { return };
-    if !room.remove_member(me) {
+    if !room.remove_member(me, conn) {
         room.broadcast_state();
     }
 }

@@ -7,6 +7,23 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.6
+
+- **Guess the song:** in a huddle, tap **Guess the song** and pick a mystery song from the shared playlist or a search. It plays with the cover blurred, and everyone else has 20 seconds to pick it from 4 similar songs. The fastest right answers get 3, 2 and 1 points. Then the answer is revealed with who picked what and a leaderboard, and the music goes back to where it was.
+- **Reaction streaks:** when the same reaction is sent 3 or more times in a row within a couple of seconds, a big burst plays for everyone with a "4× streak" label.
+- **Shoutouts:** add a short message when you add a song. It shows under the song in the shared playlist and pops up for everyone when the song starts.
+- **Room vibe:** a glow behind the cover pulses while music plays, a chip names the mood from the song's genre (for example "Dreamy vibe"), and the playlist and chat are tinted to match.
+- **Taste match:** each member's avatar shows how closely your tastes match. It goes up when you react to the same songs the same way.
+- **Members and recap:** the **⋯** menu opens the members list (host, taste match, songs added and reactions for each person, plus the invite code) and a recap of the huddle: time together, songs played, messages, the most-loved song, the top reaction and best streak, the MVP DJ and the Guess the song champion. Share it from there.
+- **A livelier chat:** everyone's messages are in bubbles. Tap a message to react with one of 6 quick emoji, or to edit your own; edited messages say so. The chat box has an emoji picker with about 220 emoji in 6 groups, and the host's reaction editor uses the same set.
+- **Download huddle songs:** save the song that's playing, or any song in the shared playlist, to your library. Progress shows while it downloads.
+- **Volume in the huddle (computer):** the huddle player has the same volume and mute control as the main player.
+- **Pick your colour:** choose your colour before starting or joining a huddle. Others see it on your avatar, your messages and the songs you add.
+- **You stay you:** if your connection drops and comes back, you rejoin as the same person, keeping your songs and, if you were the host, the host role.
+- **Your songs, your call:** everyone can remove or reorder the songs they added; the host can manage all of them.
+- **Google emoji on the computer:** reactions and chat use the same emoji style as Android.
+- **Typing on the phone:** the keyboard no longer hides the huddle's text boxes. While you type, the top of the huddle shrinks so the chat or song list stays in view.
+
 ## 1.3.5
 
 - **Huddle: listen together:** start a huddle from the button at the top of the Library (on the phone) or in the sidebar (on the computer), give it a name and share its 6-character code. Friends join with the code, on a phone or a computer.

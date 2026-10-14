@@ -1,7 +1,7 @@
 /** Texts for the huddle screens, from the room's codes. Same file in both apps. */
-import { tr } from '../i18n';
+import { tr, type Key } from '../i18n';
 import { sourceName } from '../sources';
-import type { HuddleChat, HuddleError, HuddleLast, HuddleView, SharedTrack } from './core';
+import { tasteMatch, vibeOf, type HuddleChat, type HuddleError, type HuddleLast, type HuddleMember, type HuddleView, type RoomState, type SharedTrack } from './core';
 
 export const ago = (at: number) => {
   const m = Math.floor((Date.now() - at) / 60000);
@@ -23,6 +23,10 @@ export function chatText(m: HuddleChat): string {
       return tr('huddle.sysMove', { name, title: m.text });
     case 'emos':
       return tr('huddle.sysEmos', { name, emojis: m.text });
+    case 'round':
+      return tr('huddle.sysRound', { name, n: m.text });
+    case 'game':
+      return name ? tr('huddle.sysGame', { name, title: m.text }) : tr('huddle.sysGameNone', { title: m.text });
     default:
       return m.text;
   }
@@ -69,4 +73,68 @@ export function statusText(v: HuddleView): string | null {
     if (names.length) return tr('huddle.waitingFor', { names: names.join(', ') });
   }
   return null;
+}
+
+/** "Dreamy vibe", from the song's genre. */
+export const vibeText = (t: SharedTrack | null) => tr(`huddle.vibe.${vibeOf(t?.genre)}` as Key);
+
+/** A member's line in the members list: taste match, songs added, reactions. */
+export function memberSub(room: RoomState, you: string | null, m: HuddleMember): string {
+  const pct = m.id === you ? null : tasteMatch(room, you, m.id);
+  const added = room.queue.filter(t => t.by === m.id).length;
+  return [
+    pct != null && tr('huddle.tasteMatch', { pct }),
+    tr('huddle.songsAdded', { count: added }),
+    tr('huddle.reactCount', { count: m.reacts }),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The line under Guess the song's answers. */
+export function gameText(v: HuddleView): string {
+  const r = v.room!;
+  const g = r.game!;
+  const mine = g.by === v.you;
+  const total = r.members.filter(m => m.id !== g.by).length;
+  const n = g.answered.length;
+  const answered = !!v.you && g.answered.includes(v.you);
+  if (g.phase === 'ask') {
+    if (!g.start) return tr('huddle.gettingReady');
+    if (mine) return tr('huddle.waitingGuesses', { n, total });
+    return answered ? tr('huddle.lockedIn', { n, total }) : tr('huddle.pickFast');
+  }
+  if (mine) return g.results.length ? tr('huddle.gotYours', { n: g.results.length, total }) : tr('huddle.nobodyGotYours');
+  const me = g.results.find(x => x.who === v.you);
+  if (me) return tr(g.results[0].who === v.you ? 'huddle.gotFirst' : 'huddle.niceEar', { pts: me.pts });
+  return answered ? tr('huddle.notThisTime') : tr('huddle.timeUp');
+}
+
+/** Everything the recap card shows. */
+export function recapOf(room: RoomState) {
+  const r = room.recap;
+  const mins = Math.max(1, Math.round((Date.now() - r.started) / 60000));
+  const byKey = new Map(room.queue.map(t => [t.key, t]));
+  const played = r.played.map(k => byKey.get(k)).filter((t): t is SharedTrack => !!t);
+  const pool = (played.length ? played : room.queue).map(t => t.artwork);
+  const covers = pool.length ? [0, 1, 2, 3].map(i => pool[i % pool.length]) : [];
+  const top = r.topKey ? byKey.get(r.topKey) ?? null : null;
+  const champ = room.scores[0] ?? null;
+  const minsText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins} min`;
+  return {
+    covers,
+    mins: minsText,
+    songs: String(Math.max(1, r.played.length)),
+    msgs: String(r.msgs),
+    top,
+    topSub: top ? tr('huddle.reactCount', { count: r.topN }) : '',
+    topEmoji: r.topEmoji ?? '🎶',
+    topEmojiSub: r.topEmoji ? `${r.topEmoji}  ${tr('huddle.sentTimes', { count: r.topEmojiN })}` : tr('huddle.noneYet'),
+    streak: r.bestStreak ? `${r.bestStreak}×` : '—',
+    mvp: r.mvp,
+    mvpSub: r.mvp ? tr('huddle.mvpSub', { count: r.mvp.n }) : '',
+    champ,
+    champSub: champ ? tr('huddle.points', { count: champ.pts }) : '',
+    share: tr('huddle.recapShare', { name: room.name, mins: minsText, songs: Math.max(1, r.played.length), msgs: r.msgs, top: top?.title ?? '—' }),
+  };
 }

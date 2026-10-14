@@ -1,4 +1,6 @@
 /* Geist, bundled so the app looks the same offline. */
+/* Google's emoji (Noto Color Emoji) for huddle reactions and chat; huddles need the internet anyway, offline falls back to the system's. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-Regular.ttf') format('truetype'); font-weight: 400; font-display: block; }
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-Medium.ttf') format('truetype'); font-weight: 500; font-display: block; }
 @font-face { font-family: 'Geist'; src: url('/fonts/Geist-SemiBold.ttf') format('truetype'); font-weight: 600; font-display: block; }
@@ -44,6 +46,9 @@ input::placeholder, textarea::placeholder { color: var(--muted2); }
 @keyframes panelIn { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes playerUp { from { transform: translateY(40px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes rmFloat { 0% { transform: translate(0,0) scale(.4); opacity: 0 } 8% { transform: translate(0,-16px) scale(1); opacity: 1 } 35% { transform: translate(14px,-130px) } 65% { transform: translate(-8px,-250px); opacity: 1 } 100% { transform: translate(6px,-380px); opacity: 0 } }
+@keyframes rmBurst { 0% { transform: scale(.3); opacity: 0 } 14% { transform: scale(1.15); opacity: 1 } 24% { transform: scale(1) } 78% { transform: scale(1); opacity: 1 } 100% { transform: scale(1.04) translateY(-16px); opacity: 0 } }
+@keyframes rmPulse { 0%,100% { transform: scale(.94); opacity: .55 } 50% { transform: scale(1.06); opacity: 1 } }
+@keyframes hdUp { from { transform: translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes recPulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
 /* Song change animations, two copies each so every change restarts one. */
 @keyframes slRA { from { transform: translateX(80px); opacity: 0 } to { transform: none; opacity: 1 } }

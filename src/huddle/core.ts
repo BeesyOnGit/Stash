@@ -23,6 +23,9 @@ export interface SharedTrack {
   by: string;
   byName: string;
   byColor: number;
+  genre?: string | null;
+  /** A short message from whoever added it, shown when it starts. */
+  shout?: string | null;
 }
 
 export interface HuddleMember {
@@ -31,16 +34,64 @@ export interface HuddleMember {
   color: number;
   /** Has the current song cached. */
   ready: boolean;
+  /** Reactions sent. */
+  reacts: number;
+  /** `"key emoji"`: what they reacted to and how (for taste match). */
+  likes: string[];
 }
 
 export interface HuddleChat {
   id: number;
   at: number;
-  kind: 'msg' | 'start' | 'join' | 'leave' | 'add' | 'move' | 'emos';
+  kind: 'msg' | 'start' | 'join' | 'leave' | 'add' | 'move' | 'emos' | 'round' | 'game';
   who: string;
   name: string;
   color: number;
   text: string;
+  /** Reactions on a message: emoji → member ids. */
+  rx: Record<string, string[]>;
+  edited: boolean;
+}
+
+export interface GameOpt {
+  title: string;
+  artist: string | null;
+}
+
+/** A round of Guess the song. */
+export interface HuddleGame {
+  by: string;
+  byName: string;
+  byColor: number;
+  round: number;
+  opts: GameOpt[];
+  /** Server ms the guessing started (0 while everyone gets the song) and ends. */
+  start: number;
+  end: number;
+  phase: 'ask' | 'reveal';
+  answered: string[];
+  picks: { who: string; opt: number; at: number }[] | null;
+  answer: number | null;
+  results: { who: string; pts: number }[];
+}
+
+export interface HuddleScore {
+  id: string;
+  name: string;
+  color: number;
+  pts: number;
+}
+
+export interface HuddleRecap {
+  started: number;
+  played: string[];
+  msgs: number;
+  bestStreak: number;
+  topKey: string | null;
+  topN: number;
+  topEmoji: string | null;
+  topEmojiN: number;
+  mvp: { name: string; color: number; n: number } | null;
 }
 
 export interface HuddleLast {
@@ -68,6 +119,9 @@ export interface RoomState {
   reactions: Record<string, number> | null;
   emos: string[];
   last: HuddleLast | null;
+  game: HuddleGame | null;
+  scores: HuddleScore[];
+  recap: HuddleRecap;
 }
 
 /** A reaction flying up the screen. */
@@ -96,11 +150,23 @@ export interface HuddleView {
   floats: HuddleFloat[];
   /** Reactions you sent for the current song (highlighted in the tray). */
   mine: Record<string, true>;
+  /** The same emoji 3+ times in a row from anyone: a big burst. */
+  burst: { id: number; emoji: string; n: number; at: number } | null;
+  /** The current song's shoutout, popped up when it starts. */
+  shout: { key: string; at: number } | null;
+}
+
+/** Who you are in a huddle: this device, a name and a colour. */
+export interface HuddleMe {
+  name: string;
+  color: number;
 }
 
 /** What the huddle needs from the app around it. */
 export interface HuddleHost {
   serverUrl(): string;
+  /** Stays the same on this device: you're the same member when you reconnect. */
+  deviceId(): string;
   /** The song on this device: from the library if it's there, else resolved and downloaded into the huddle cache. Returns its path. */
   cache(t: SharedTrack, onProgress: (p: number) => void): Promise<string>;
   clearCache(): Promise<void>;
@@ -140,7 +206,8 @@ export const HUDDLE_COLORS = ['#E0532F', '#8B5CF6', '#2F80C2', '#2E9D62', '#D99A
 export const huddleColor = (i: number) => HUDDLE_COLORS[i % HUDDLE_COLORS.length];
 
 export function createHuddle(host: HuddleHost) {
-  let view: HuddleView = { status: 'idle', error: null, you: null, room: null, cache: {}, floats: [], mine: {} };
+  const empty = { room: null, you: null, cache: {}, floats: [], mine: {}, burst: null, shout: null };
+  let view: HuddleView = { status: 'idle', error: null, ...empty };
   const listeners = new Set<() => void>();
   const set = (patch: Partial<HuddleView>) => {
     view = { ...view, ...patch };
@@ -149,7 +216,7 @@ export function createHuddle(host: HuddleHost) {
 
   let ws: WebSocket | null = null;
   /** How to (re)connect: the code once known, the room name for creating. */
-  let joinWith: { name: string; code?: string; create?: string } | null = null;
+  let joinWith: { name: string; id: string; color: string; code?: string; create?: string } | null = null;
   let offset = 0;
   let bestRtt = Infinity;
   let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -164,6 +231,9 @@ export function createHuddle(host: HuddleHost) {
   let settleUntil = 0;
   let floatSeq = 0;
   let mineFor: string | null = null;
+  /** Round already reported ended, and when this device saw its reveal. */
+  let endSent = 0;
+  let revealSeen: { round: number; at: number; sent: boolean } | null = null;
 
   const serverNow = () => Date.now() + offset;
   const base = () => host.serverUrl().replace(/\/+$/, '');
@@ -188,7 +258,7 @@ export function createHuddle(host: HuddleHost) {
       const msg = JSON.parse(String(e.data));
       if (msg.t === 'welcome') {
         welcomed = true;
-        joinWith = { name: joinWith!.name, code: msg.code };
+        joinWith = { ...joinWith!, create: undefined, code: msg.code };
         set({ status: 'live', error: null, you: msg.you });
         bestRtt = Infinity;
         for (let i = 0; i < 5; i++) setTimeout(ping, i * 250);
@@ -230,26 +300,30 @@ export function createHuddle(host: HuddleHost) {
     }
   }
 
-  function onReact(m: { who: string; name: string; color: number; emoji: string }) {
+  function onReact(m: { who: string; name: string; color: number; emoji: string; streak: number }) {
     const now = Date.now();
     const floats = [
       ...view.floats.filter(f => now - f.at < 3300),
       { id: ++floatSeq, emoji: m.emoji, name: m.name, color: m.color, x: Math.random() * 50, at: now },
     ].slice(-24);
     const mine = m.who === view.you ? { ...view.mine, [m.emoji]: true as const } : view.mine;
-    set({ floats, mine });
+    const b = view.burst;
+    const burst = m.streak >= 3 ? { id: b && b.emoji === m.emoji && now - b.at < 2600 ? b.id : ++floatSeq, emoji: m.emoji, n: m.streak, at: now } : b;
+    set({ floats, mine, burst });
   }
 
-  function start(name: string, how: { code?: string; create?: string }) {
+  function start(me: HuddleMe, how: { code?: string; create?: string }) {
     leave(false);
-    joinWith = { name, ...how };
-    set({ status: 'connecting', error: null, room: null, you: null, cache: {}, floats: [], mine: {} });
+    joinWith = { name: me.name, color: String(me.color), id: host.deviceId(), ...how };
+    set({ status: 'connecting', error: null, ...empty });
     host.player.setRemote(remote);
     pingTimer = setInterval(ping, PING_EVERY_MS);
     tickTimer = setInterval(() => {
       sync();
       if (view.floats.length && Date.now() - view.floats[0].at > 3300)
         set({ floats: view.floats.filter(f => Date.now() - f.at < 3300) });
+      if (view.burst && Date.now() - view.burst.at > 2000) set({ burst: null });
+      gameTick();
     }, 1000);
     connect();
   }
@@ -270,7 +344,24 @@ export function createHuddle(host: HuddleHost) {
       if (stopPlayer) host.player.stop();
       host.clearCache().catch(() => {});
     }
-    set({ status: 'idle', room: null, you: null, cache: {}, floats: [], mine: {} });
+    set({ status: 'idle', ...empty });
+  }
+
+  /** Every member's countdown reports the end; the server takes the first in time. */
+  function gameTick() {
+    const g = view.room?.game;
+    if (!g) return;
+    if (g.phase === 'ask' && g.start && serverNow() >= g.end && endSent !== g.round) {
+      endSent = g.round;
+      send({ t: 'gameEnd' });
+    }
+    if (g.phase === 'reveal') {
+      if (revealSeen?.round !== g.round) revealSeen = { round: g.round, at: Date.now(), sent: false };
+      if (!revealSeen.sent && Date.now() - revealSeen.at > 6000) {
+        revealSeen.sent = true;
+        send({ t: 'gameClose' });
+      }
+    }
   }
 
   // ---------- room state ----------
@@ -279,8 +370,10 @@ export function createHuddle(host: HuddleHost) {
     const prev = view.room;
     const cur = room.queue[room.index];
     if (cur?.key !== mineFor) {
+      // A song changed (not on the first state: no shoutout for what was already on).
+      const shout = prev && cur?.shout && !room.game ? { key: cur.key, at: Date.now() } : view.shout;
       mineFor = cur?.key ?? null;
-      view = { ...view, mine: {} };
+      view = { ...view, mine: {}, shout };
     }
     // Cache entries for songs no longer in the list are forgotten.
     const keys = new Set(room.queue.map(t => t.key));
@@ -409,8 +502,8 @@ export function createHuddle(host: HuddleHost) {
         listeners.delete(fn);
       };
     },
-    create: (name: string, roomName: string) => start(name, { create: roomName }),
-    join: (name: string, code: string) => start(name, { code: code.toUpperCase() }),
+    create: (me: HuddleMe, roomName: string) => start(me, { create: roomName }),
+    join: (me: HuddleMe, code: string) => start(me, { code: code.toUpperCase() }),
     leave: () => leave(true),
     clearError: () => set({ error: null }),
     remote,
@@ -420,6 +513,13 @@ export function createHuddle(host: HuddleHost) {
     chat: (text: string) => text.trim() && send({ t: 'chat', text }),
     react: (emoji: string) => send({ t: 'react', emoji }),
     setEmos: (list: string[]) => send({ t: 'emos', list }),
+    chatReact: (id: number, emoji: string) => send({ t: 'chatReact', id, emoji }),
+    chatEdit: (id: number, text: string) => text.trim() && send({ t: 'chatEdit', id, text }),
+    /** Starts a round of Guess the song with a song from the shared playlist. */
+    startGame: (key: string, decoys: GameOpt[]) => send({ t: 'gameStart', key, decoys }),
+    guess: (opt: number) => send({ t: 'guess', opt }),
+    closeShout: () => set({ shout: null }),
+    serverNow,
     /** Is this song (by library id) already in the shared playlist? */
     has: (key: string) => !!view.room?.queue.some(t => t.key === key),
     /** Where the room is right now (for the seek bar). */
@@ -433,5 +533,50 @@ export function createHuddle(host: HuddleHost) {
 
 export type Huddle = ReturnType<typeof createHuddle>;
 
-export const EMO_LIB = ['❤️', '👍', '🎉', '👏', '😂', '😮', '🔥', '😍', '🥹', '😭', '🤯', '🙌', '💃', '🕺', '🎶', '🎸', '🥁', '🎤', '✨', '💯', '👀', '🤘', '😎', '🫶', '💀', '🥳', '😴', '👎', '🤔', '🌊', '🌙', '☀️'];
+/** The emoji picker (chat and the host's reaction editor): [name key, icon, emojis]. */
+export const EMO_CATS: [string, string, string[]][] = [
+  ['smileys', '😀', ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘','😋','😛','😜','🤪','😝','🤗','🤭','🤫','🤔','🤐','🤨','😐','😏','😒','🙄','😬','😌','😔','😪','😴','😷','🥵','🥶','🥴','😵','🤯','🤠','🥳','😎','🤓','🧐','😕','😟','🙁','😮','😯','😲','😳','🥺','🥹','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','💀','👻','👽','🤖','💩','🙈','🙉','🙊']],
+  ['gestures', '👋', ['👍','👎','👏','🙌','👐','🤲','🤝','🙏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','👌','🤌','🤏','💪','🫶','🫡','👀','💃','🕺','🙋','🙆','🙅','🤷','🤦']],
+  ['hearts', '❤️', ['❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💖','💗','💓','💞','💕','💘','💝','💔','❣️','💯','💢','💥','💫','💦','💨']],
+  ['party', '🎶', ['🎶','🎵','🎤','🎧','🎸','🎹','🥁','🎷','🎺','🎻','🪗','📻','🎼','🎉','🎊','🥳','🎈','🎁','🪩','✨','🌟','⭐','🔥','⚡','🏆','🥇','🎯','🎮','🎬','📸']],
+  ['nature', '🌸', ['☀️','🌙','🌈','☁️','🌧️','❄️','🌊','🌸','🌹','🌻','🌴','🍀','🍁','🌵','🐶','🐱','🦊','🐻','🐼','🐸','🦄','🐝','🦋','🐙']],
+  ['food', '🍕', ['🍕','🍔','🍟','🌮','🍣','🍜','🍩','🍪','🎂','🍰','🍫','🍿','🍓','🍉','🍑','🥑','☕','🧋','🍹','🍸','🍷','🍺','🥂','🧃']],
+];
+export const EMO_LIB = [...new Set(EMO_CATS.flatMap(c => c[2]))];
+/** Quick reactions on a chat message. */
+export const QUICK_EMOS = ['❤️', '😂', '🔥', '👍', '😮', '😭'];
+
+/** How much your reactions and theirs agree, 0..100; null until both reacted. */
+export function tasteMatch(room: RoomState, you: string | null, id: string): number | null {
+  const a = new Set(room.members.find(m => m.id === you)?.likes ?? []);
+  const b = new Set(room.members.find(m => m.id === id)?.likes ?? []);
+  if (!a.size || !b.size) return null;
+  let both = 0;
+  for (const x of a) if (b.has(x)) both++;
+  return Math.round((100 * both) / (a.size + b.size - both));
+}
+
+const MOODS: Record<string, string> = {
+  electronic: 'electric', dance: 'electric', house: 'electric', techno: 'electric', pop: 'bright', indie: 'dreamy',
+  'hip-hop': 'bouncy', 'hip hop': 'bouncy', rap: 'bouncy', rock: 'loud', metal: 'loud', jazz: 'smoky', classical: 'calm',
+  'r&b': 'smooth', soul: 'warm', folk: 'cosy', ambient: 'floaty', funk: 'groovy', alternative: 'moody',
+};
+/** The room's mood from the song's genre (a key for huddle.vibe.*). */
+export function vibeOf(genre: string | null | undefined): string {
+  const g = (genre ?? '').toLowerCase();
+  return Object.entries(MOODS).find(([k]) => g.includes(k))?.[1] ?? 'chill';
+}
+
+type Pickable = { title: string; artist: string | null; genre?: string | null };
+/** Up to 3 wrong answers that sound like the right one: same artist first, then same genre. */
+export function pickDecoys(right: Pickable, pool: Pickable[]): GameOpt[] {
+  const seen = new Set([right.title.toLowerCase()]);
+  const score = (x: Pickable) => (x.artist && x.artist === right.artist ? 2 : 0) + (x.genre && x.genre === right.genre ? 1.2 : 0) + Math.random() * 0.9;
+  return pool
+    .map(x => ({ x, k: score(x) }))
+    .sort((a, b) => b.k - a.k)
+    .filter(({ x }) => !seen.has(x.title.toLowerCase()) && !!seen.add(x.title.toLowerCase()))
+    .slice(0, 3)
+    .map(({ x }) => ({ title: x.title, artist: x.artist }));
+}
 export const DEFAULT_EMOS = ['❤️', '👍', '🎉', '👏', '😂', '😮', '🔥'];
