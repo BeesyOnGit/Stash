@@ -1,0 +1,123 @@
+# Tests, builds and deploys the huddle server (huddle_api/) to the VPS when it
+# changes on main. The image goes to GHCR; the VPS pulls it and runs
+# huddle_api/deploy/deploy.sh.
+#
+# Needs these secrets (Settings → Secrets and variables → Actions, or the
+# `production` environment):
+#   VPS_HOST, VPS_USER, VPS_SSH_KEY   SSH access to the VPS
+#   VPS_PORT                          optional, 22 by default
+# and optionally the variable HUDDLE_DEPLOY_PATH (folder on the VPS, `huddle` by default).
+
+name: Huddle API
+
+on:
+  push:
+    branches: [main]
+    paths: ['huddle_api/**', '.github/workflows/huddle_api.yml']
+  pull_request:
+    branches: [main]
+    paths: ['huddle_api/**', '.github/workflows/huddle_api.yml']
+  workflow_dispatch:
+
+# One deployment at a time; a newer push waits for the running one
+concurrency:
+  group: huddle-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+
+defaults:
+  run:
+    working-directory: huddle_api
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: huddle_api
+      - run: cargo test --locked
+
+  build:
+    name: Build & push image
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Image name (GHCR needs lowercase)
+        run: echo "image=${REGISTRY}/${GITHUB_REPOSITORY,,}/huddle_api" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: huddle_api
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha,scope=huddle_api
+          cache-to: type=gha,mode=max,scope=huddle_api
+
+  deploy:
+    name: Deploy to VPS
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
+      DEPLOY_PATH: ${{ vars.HUDDLE_DEPLOY_PATH || 'huddle' }}
+      SSH_PORT: ${{ secrets.VPS_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -p "$SSH_PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            User ${{ secrets.VPS_USER }}
+            Port ${SSH_PORT}
+            IdentityFile ~/.ssh/id_deploy
+          EOF
+
+      - name: Upload stack files
+        run: |
+          ssh vps "mkdir -p ${DEPLOY_PATH}"
+          scp deploy/docker-compose.yml deploy/deploy.sh deploy/.env.production.example "vps:${DEPLOY_PATH}/"
+
+      - name: Deploy
+        run: |
+          # The job token lets the VPS pull the (private) image; it expires when the job ends
+          echo "${{ secrets.GITHUB_TOKEN }}" | ssh vps "docker login ${REGISTRY} -u ${{ github.actor }} --password-stdin"
+          ssh vps "cd ${DEPLOY_PATH} && IMAGE='${IMAGE}' bash deploy.sh"
+
+      - name: Log out of the registry
+        if: always()
+        run: ssh vps "docker logout ${REGISTRY}" || true

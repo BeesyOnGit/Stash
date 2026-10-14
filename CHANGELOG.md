@@ -7,6 +7,14 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.5
+
+- **Huddle: listen together:** start a huddle from the button at the top of the Library (on the phone) or in the sidebar (on the computer), give it a name and share its 6-character code. Friends join with the code, on a phone or a computer.
+- **Same song, same second:** a song only starts once everyone has it, and then starts at the same instant for all. If someone's player drifts off, it's pulled back in step. Songs are fetched on each device ahead of time, so the next one is ready when the current one ends.
+- **A shared playlist and shared controls:** everyone can add songs from their library or from a search of free sources, reorder or remove them, and play, pause, skip or jump for everyone. The huddle shows who did what last. Songs that only exist as files on one device can't be shared, since the others have no way to get them.
+- **Chat and reactions:** talk in the huddle's chat and send reactions that float up everyone's screen. The host picks which reactions (up to 8) the huddle uses.
+- **Nothing kept:** a huddle isn't saved anywhere. It ends a few minutes after the last person leaves, and the songs fetched for it aren't added to your library.
+
 ## 1.3.4
 
 - **Add songs straight from a playlist:** open a playlist and tap **+** next to Play and Shuffle. Search your library, tick the songs you want and tap **Add**. Songs already in the playlist aren't listed.

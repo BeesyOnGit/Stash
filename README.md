@@ -217,3 +217,11 @@ cd huddle_api
 cargo run                       # PORT=8080 by default, see .env.example
 docker build -t huddle_api .    # or as a container
 ```
+
+**Deploying to a VPS:** every push to `main` that touches `huddle_api/` runs [`.github/workflows/huddle_api.yml`](.github/workflows/huddle_api.yml): tests, builds the image to GHCR, copies [`huddle_api/deploy/`](huddle_api/deploy/) to the VPS and runs `deploy.sh` there (pull, restart, wait for `/health`). Restarting ends the live huddles.
+
+1. On the VPS (Docker installed): `mkdir ~/huddle` and put a `.env` in it, made from [`deploy/.env.production.example`](huddle_api/deploy/.env.production.example).
+2. In the repository's `production` environment, add the secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (and `VPS_PORT` if not 22). The folder can be changed with the variable `HUDDLE_DEPLOY_PATH`.
+3. Point `HUDDLE_SERVER` in `src/huddle/server.ts` and `desktop/src/core/huddle/server.ts` at the VPS before building the apps.
+
+Roll back by hand on the VPS: `IMAGE=ghcr.io/beesyongit/stash/huddle_api:<sha> ./deploy.sh`.
