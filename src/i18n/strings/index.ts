@@ -1,5 +1,6 @@
 import type { Entry, Lang } from '../types';
 import common from './common';
+import huddle from './huddle';
 import karaoke from './karaoke';
 import library from './library';
 import player from './player';
@@ -11,6 +12,7 @@ import system from './system';
 
 const PARTS = [
   common,
+  huddle,
   settings,
   player,
   sheets,
@@ -23,6 +25,7 @@ const PARTS = [
 
 export type Key =
   | keyof typeof common.en
+  | keyof typeof huddle.en
   | keyof typeof settings.en
   | keyof typeof player.en
   | keyof typeof sheets.en

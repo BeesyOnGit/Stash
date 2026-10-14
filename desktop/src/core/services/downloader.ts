@@ -51,7 +51,7 @@ export const onDownloadFinished = (fn: FinishedListener) => {
   };
 };
 
-function extensionFor(mimeType: string | null, url: string): string {
+export function extensionFor(mimeType: string | null, url: string): string {
   if (
     mimeType?.includes('mp4') ||
     mimeType?.includes('m4a') ||

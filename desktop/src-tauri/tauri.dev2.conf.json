@@ -1,0 +1,8 @@
+{
+  "identifier": "com.beesyongit.stash.dev2",
+  "productName": "stash dev2",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:1420"
+  }
+}

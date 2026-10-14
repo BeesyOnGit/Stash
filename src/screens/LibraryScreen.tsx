@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { TrackRow } from '../components/TrackRow';
+import { HuddleButton } from './HuddleScreen';
 import { tr, type Key } from '../i18n';
 import type { LibraryStackParamList } from '../navigation/types';
 import { PlayerService } from '../player/PlayerService';
@@ -219,17 +220,20 @@ export function LibraryScreen() {
             {tr('library.title')}
           </Text>
         </View>
-        <View
-          style={[
-            styles.countPill,
-            { backgroundColor: t.card, borderColor: t.line },
-          ]}
-        >
-          <CheckCircleIcon color={GREEN} />
-          <Text style={[font(500, 12), { color: t.ink2 }]}>
-            {tr('common.songs', { count: ready.length })} ·{' '}
-            {formatBytes(totalBytes)}
-          </Text>
+        <View style={styles.headRight}>
+          <View
+            style={[
+              styles.countPill,
+              { backgroundColor: t.card, borderColor: t.line },
+            ]}
+          >
+            <CheckCircleIcon color={GREEN} />
+            <Text style={[font(500, 12), { color: t.ink2 }]}>
+              {tr('common.songs', { count: ready.length })} ·{' '}
+              {formatBytes(totalBytes)}
+            </Text>
+          </View>
+          <HuddleButton />
         </View>
       </View>
 
@@ -667,6 +671,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   h1: { ...font(700, 34, 1.05), letterSpacing: -1, marginTop: 4 },
+  headRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   countPill: {
     flexDirection: 'row',
     alignItems: 'center',

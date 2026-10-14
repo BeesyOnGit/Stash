@@ -11,6 +11,7 @@ import { StatusBar } from 'react-native';
 import { Sheets } from '../components/Sheets';
 import { TabBar } from '../components/TabBar';
 import { CollectionScreen } from '../screens/CollectionScreen';
+import { HuddleScreen } from '../screens/HuddleScreen';
 import { KaraokeScreen } from '../screens/KaraokeScreen';
 import { LibraryScreen } from '../screens/LibraryScreen';
 import { PlayerScreen } from '../screens/PlayerScreen';
@@ -103,6 +104,11 @@ export function RootNavigator() {
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom',
           }}
+        />
+        <Root.Screen
+          name="Huddle"
+          component={HuddleScreen}
+          options={{ animation: 'slide_from_right' }}
         />
         <Root.Screen
           name="Karaoke"

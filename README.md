@@ -34,6 +34,12 @@ next time.
 - **Similar songs** and a **random suggestions** mode that keeps playing related music, online or offline, until you turn it off.
 - Mini player above the tabs: tap to open, ✕ or swipe sideways to stop.
 
+**Huddle** (phone and desktop)
+- Listen together: start a huddle and share its 6-character code, or join one. Everyone adds songs, shares play / pause / skip / seek, chats and sends reactions (the host picks which).
+- Songs are shared by their link: each device resolves and downloads them with its own sources, in advance. A song only starts once everyone has it, at the same instant for all (clocks are matched with the server), and players drifting off are pulled back in step.
+- Songs that exist only as files on a device can't be shared (they have no link).
+- Needs a huddle server ([`huddle_api/`](huddle_api/)); its address goes in the Huddle screen.
+
 **Android extras**
 - **Floating bubble** over other apps while music plays in the background: drag it, drop it on ✕ to hide it, tap it for a card with controls, favorites and suggestions.
 - **Android Auto**: library, playlists and suggestions in the car, with Like, Speed and Shuffle buttons and voice search.
@@ -201,3 +207,21 @@ stash is open source under the [MIT License](LICENSE): use it, change it and sha
 ## Note
 
 A personal project, shared as is. Most of stash, its code and its design, was created by AI, with the author directing it, reviewing the results and testing them on real phones. Please respect the terms of the services you connect it to and the rights of the artists you listen to.
+
+### Huddle server
+
+[`huddle_api/`](huddle_api/) is a small Rust (Axum) WebSocket server; huddles live in memory only and are discarded `EMPTY_TTL_SECS` (default 300) after the last member leaves.
+
+```sh
+cd huddle_api
+cargo run                       # PORT=8080 by default, see .env.example
+docker build -t huddle_api .    # or as a container
+```
+
+**Deploying to a VPS:** every push to `main` that touches `huddle_api/` runs [`.github/workflows/huddle_api.yml`](.github/workflows/huddle_api.yml): tests, builds the image to GHCR, copies [`huddle_api/deploy/`](huddle_api/deploy/) to the VPS and runs `deploy.sh` there (pull, restart, wait for `/health`). Restarting ends the live huddles.
+
+1. On the VPS (Docker installed): `mkdir ~/huddle` and put a `.env` in it, made from [`deploy/.env.production.example`](huddle_api/deploy/.env.production.example).
+2. In the repository's `production` environment, add the secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (and `VPS_PORT` if not 22). The folder can be changed with the variable `HUDDLE_DEPLOY_PATH`.
+3. Point `HUDDLE_SERVER` in `src/huddle/server.ts` and `desktop/src/core/huddle/server.ts` at the VPS before building the apps.
+
+Roll back by hand on the VPS: `IMAGE=ghcr.io/beesyongit/stash/huddle_api:<sha> ./deploy.sh`.

@@ -17,6 +17,7 @@ import {
   upsertTrack,
 } from '../db/database';
 import { tr } from '../i18n';
+import type { HuddleRemote } from '../huddle/core';
 import { fileSrc } from '../native';
 import { ensureArtwork } from '../services/artwork';
 import { downloadTrack, isDownloading } from '../services/downloader';
@@ -205,8 +206,8 @@ class PlayerServiceImpl {
     const p = new Audio();
     p.preload = 'auto';
     p.preservesPitch = true;
-    p.defaultPlaybackRate = getSettings().playbackSpeed;
-    p.playbackRate = getSettings().playbackSpeed;
+    p.defaultPlaybackRate = this.speed();
+    p.playbackRate = this.speed();
     const mine = () => p === this.player;
     const playing = () => {
       if (mine())
@@ -357,7 +358,7 @@ class PlayerServiceImpl {
     if (startAt > 0) this.player.currentTime = startAt;
     this.applyLoop();
     this.applyVolume();
-    if (autoplay) this.play();
+    if (autoplay) this.localPlay();
   }
 
   /** The queue, progress and library bookkeeping for the song now loaded. */
@@ -386,6 +387,7 @@ class PlayerServiceImpl {
   // ---------- the next song, ready before this one ends ----------
 
   private maybePreload() {
+    if (this.remote) return;
     const { position, duration } = this.progress;
     if (
       this.preloadedFor === this.loadToken ||
@@ -404,6 +406,7 @@ class PlayerServiceImpl {
    * follow the end of this one (or for the crossfade).
    */
   private maybeStartNextOnTime(position: number) {
+    if (this.remote) return;
     const pre = this.preloaded;
     const left = this.secondsLeft(position);
     const fade = this.crossfadeLength();
@@ -565,6 +568,7 @@ class PlayerServiceImpl {
     shuffle = this.state.shuffle,
     dir: MoveDir = 0,
   ) {
+    if (this.inHuddle()) return;
     if (!tracks.length) return;
     this.moveDir = dir;
     const start = tracks[startIndex] ?? tracks[0];
@@ -621,6 +625,7 @@ class PlayerServiceImpl {
     ctx = tr('system.ctxSearch', { source: sourceName(result.source) }),
     dir: MoveDir = 0,
   ) {
+    if (this.inHuddle()) return;
     const id = trackIdFor(result.source, result.sourceId);
     const existing = await getTrack(id);
     if (existing) return this.playQueue([existing], 0, ctx, false, dir);
@@ -702,6 +707,7 @@ class PlayerServiceImpl {
 
   /** Insert a song right after the current one. */
   playNext(item: QueueItem) {
+    if (this.inHuddle()) return;
     if (!this.current) {
       this.playQueue([item], 0, tr('system.ctxLibrary'), false);
       return;
@@ -721,6 +727,7 @@ class PlayerServiceImpl {
 
   /** Adds a song at the end of the queue (moves it there if it's already coming up). */
   addToQueue(item: QueueItem) {
+    if (this.inHuddle()) return;
     const cur = this.current;
     if (!cur) {
       this.playQueue([item], 0, tr('system.ctxLibrary'), false);
@@ -744,6 +751,7 @@ class PlayerServiceImpl {
 
   /** Moves a song in the queue (drag handles). */
   moveInQueue(from: number, to: number) {
+    if (this.inHuddle()) return;
     const { queue, index, shuffle } = this.state;
     if (from === to || !queue[from] || !queue[to]) return;
     const cur = queue[index];
@@ -759,6 +767,7 @@ class PlayerServiceImpl {
 
   /** Takes a song out of the queue only (it stays in the library). */
   removeFromQueueOnly(id: string) {
+    if (this.inHuddle()) return;
     const { queue, index } = this.state;
     const i = queue.findIndex(t => t.id === id);
     if (i < 0 || i === index) return;
@@ -781,7 +790,7 @@ class PlayerServiceImpl {
 
   // ---------- transport ----------
 
-  play() {
+  localPlay() {
     this.wantsToPlay = true;
     const sleep = this.state.sleep;
     if (sleep && 'at' in sleep && sleep.at <= Date.now()) this.cancelSleep(true);
@@ -790,7 +799,7 @@ class PlayerServiceImpl {
       if (this.current) this.load(this.state.index, true, this.progress.position);
       return;
     }
-    p.playbackRate = getSettings().playbackSpeed;
+    p.playbackRate = this.speed();
     p.play().catch(e => {
       if (p !== this.player || e?.name === 'AbortError') return;
       // A stream URL that expired or was refused: resolve it again once.
@@ -806,7 +815,7 @@ class PlayerServiceImpl {
   /** Playback speed for everything you play; pitch stays the same. */
   setSpeed(speed: number) {
     saveSettings({ playbackSpeed: speed });
-    if (this.player) this.player.playbackRate = speed;
+    if (this.player) this.player.playbackRate = this.speed();
     if (this.preloaded) this.preloaded.player.playbackRate = speed;
   }
 
@@ -815,7 +824,7 @@ class PlayerServiceImpl {
     this.setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
   }
 
-  pause() {
+  localPause() {
     this.wantsToPlay = false;
     this.saveListening();
     this.finishCrossfade();
@@ -823,12 +832,65 @@ class PlayerServiceImpl {
     if (this.state.isPlaying) this.setState({ isPlaying: false });
   }
 
+  // ---------- huddle: the room drives the player ----------
+
+  /** While in a huddle, the transport buttons go to the room instead (see huddle/core). */
+  private remote: HuddleRemote | null = null;
+
+  setRemote(remote: HuddleRemote | null) {
+    this.remote = remote;
+    if (this.player) this.applySpeedNow();
+  }
+
+  /** Everyone in a huddle plays at 1×, or they'd drift apart. */
+  private speed() {
+    return this.remote ? 1 : getSettings().playbackSpeed;
+  }
+
+  private applySpeedNow() {
+    if (this.player) this.player.playbackRate = this.speed();
+  }
+
+  /** Something other than the huddle wants to play: not while you're in one. */
+  private inHuddle() {
+    if (!this.remote) return false;
+    toast(tr('huddle.leaveFirst'));
+    return true;
+  }
+
+  /** The huddle's songs as the queue, `index` loaded and paused, ready for the room's start. */
+  async huddleLoad(items: QueueItem[], index: number, contextName: string) {
+    this.moveDir = 0;
+    this.setState({ context: items, queue: items, index, contextName, shuffle: false, radio: false });
+    await this.load(index, false);
+  }
+
+  play() {
+    if (this.remote) this.remote.play();
+    else this.localPlay();
+  }
+
+  pause() {
+    if (this.remote) this.remote.pause();
+    else this.localPause();
+  }
+
+  seekTo(seconds: number) {
+    if (this.remote) this.remote.seek(seconds);
+    else this.localSeek(seconds);
+  }
+
   togglePlay() {
+    if (this.remote) {
+      if (this.state.isPlaying) this.remote.pause();
+      else this.remote.play();
+      return;
+    }
     if (this.player && !this.player.paused) this.pause();
     else this.play();
   }
 
-  seekTo(seconds: number) {
+  localSeek(seconds: number) {
     this.finishCrossfade();
     if (this.player) this.player.currentTime = seconds;
     this.startedNextFor = -1;
@@ -836,6 +898,10 @@ class PlayerServiceImpl {
   }
 
   async next(auto = false) {
+    if (this.remote) {
+      if (!auto) this.remote.next();
+      return;
+    }
     const { queue, index, repeat, shuffle } = this.state;
     if (!queue.length) return;
     let n = index + 1;
@@ -857,6 +923,7 @@ class PlayerServiceImpl {
   }
 
   async previous() {
+    if (this.remote) return this.remote.previous();
     // Like every music player: restart the song unless it just started.
     if (this.progress.position > 3 || this.state.index <= 0) {
       this.seekTo(0);
@@ -868,6 +935,7 @@ class PlayerServiceImpl {
 
   /** The song before this one, even well into the song (swiping the cover). */
   async previousSong() {
+    if (this.remote) return this.remote.previous();
     if (this.state.index <= 0) {
       this.seekTo(0);
       return;
@@ -877,6 +945,7 @@ class PlayerServiceImpl {
   }
 
   async skipTo(index: number) {
+    if (this.remote) return this.remote.skipTo(index);
     this.moveDir =
       index > this.state.index ? 1 : index < this.state.index ? -1 : 0;
     await this.load(index);
@@ -1053,6 +1122,7 @@ class PlayerServiceImpl {
   // ---------- random suggestions ----------
 
   async startRadio(first: { track?: Track; result?: OnlineResult }) {
+    if (this.inHuddle()) return;
     this.radioPlayed.clear();
     this.setState({ radio: true });
     toast(tr('system.radioOn'));
@@ -1176,6 +1246,10 @@ class PlayerServiceImpl {
   }
 
   private onTrackEnded() {
+    if (this.remote) {
+      this.remote.ended();
+      return;
+    }
     const sleep = this.state.sleep;
     if (sleep && 'endOfSong' in sleep) {
       this.cancelSleep(true);

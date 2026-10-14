@@ -24,4 +24,5 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   Player: undefined;
   Karaoke: { trackId: string };
+  Huddle: undefined;
 };
