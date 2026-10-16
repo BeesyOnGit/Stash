@@ -19,6 +19,7 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-sql": "^2.5.0",
     "@tauri-apps/plugin-updater": "^2.13.0",
+    "livekit-client": "^2.23.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "youtubei.js": "^18.1.0"

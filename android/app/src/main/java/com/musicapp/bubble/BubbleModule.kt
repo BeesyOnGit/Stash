@@ -130,6 +130,20 @@ class BubbleModule(context: ReactApplicationContext) :
     }
   }
 
+  /** The huddle's voice chat: keeps the mic on with the screen locked (VoiceService). */
+  @ReactMethod
+  fun startVoice(title: String, text: String) {
+    val ctx = reactApplicationContext
+    val intent = Intent(ctx, VoiceService::class.java).putExtra("title", title).putExtra("text", text)
+    runCatching { if (android.os.Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(intent) else ctx.startService(intent) }
+  }
+
+  @ReactMethod
+  fun stopVoice() {
+    val ctx = reactApplicationContext
+    runCatching { ctx.stopService(Intent(ctx, VoiceService::class.java)) }
+  }
+
   // Required by NativeEventEmitter.
   @ReactMethod fun addListener(eventName: String) {}
   @ReactMethod fun removeListeners(count: Double) {}

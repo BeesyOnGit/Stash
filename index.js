@@ -3,6 +3,7 @@
  */
 
 import './src/polyfills';
+import { registerGlobals } from '@livekit/react-native';
 import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
@@ -11,6 +12,8 @@ import { startCarBridge } from './src/car/CarBridge';
 import { syncLayoutDirection } from './src/i18n';
 import { getSettings } from './src/services/settings';
 
+// WebRTC for the huddle's voice chat (livekit-client).
+registerGlobals();
 // Reads the Language setting; Arabic lays the app out right to left.
 getSettings();
 syncLayoutDirection();

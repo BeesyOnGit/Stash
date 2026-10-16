@@ -1,4 +1,4 @@
-# Production stack on the VPS: the huddle server.
+# Production stack on the VPS: the huddle server and LiveKit (voice chat).
 # Values come from the `.env` next to this file (see .env.production.example).
 # IMAGE is set by deploy.sh to the image built by GitHub Actions.
 
@@ -11,6 +11,26 @@ services:
     env_file: .env
     ports:
       - "${API_BIND:-0.0.0.0}:${PORT}:${PORT}"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  livekit:
+    image: livekit/livekit-server:v1.8.4
+    restart: unless-stopped
+    command: --config /etc/livekit.yml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./livekit.yml:/etc/livekit.yml:ro
+    ports:
+      # Signalling: served as wss:// by the reverse proxy (LIVEKIT_URL)
+      - "${LIVEKIT_BIND:-127.0.0.1}:7880:7880"
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+      - "3478:3478/udp"
     logging:
       driver: json-file
       options:

@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>stash records your voice when you sing karaoke.</string>
+  <string>stash uses the microphone for karaoke and for talking in a huddle.</string>
 </dict>
 </plist>

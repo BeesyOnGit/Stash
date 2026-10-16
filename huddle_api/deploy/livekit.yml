@@ -1,0 +1,18 @@
+# LiveKit (voice chat in huddles). The API key and secret come from
+# LIVEKIT_KEYS, set by docker-compose.yml from .env.
+port: 7880
+rtc:
+  tcp_port: 7881
+  # One muxed UDP port is simpler to open than a range
+  udp_port: 7882
+  use_external_ip: true
+turn:
+  # For networks that block UDP. TURN over TLS (5349) needs a domain and a
+  # certificate: add it if people on mobile data can't connect.
+  enabled: true
+  udp_port: 3478
+room:
+  # Same as EMPTY_TTL_SECS
+  empty_timeout: 300
+logging:
+  level: info

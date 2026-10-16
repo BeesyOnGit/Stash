@@ -1082,10 +1082,17 @@ class PlayerServiceImpl {
   }
 
   private liveVolume: number | null = null;
+  private duck = 1;
 
-  /** What the player plays at: the volume, lowered by the sleep timer's fade. */
+  /** Lowers the music for a while (0â€“1, 1 = as set): a huddle's voice chat while people talk. */
+  setDuck(level: number) {
+    this.duck = level;
+    this.applyVolume();
+  }
+
+  /** What the player plays at: the volume, lowered by the sleep timer's fade and ducking. */
   private level() {
-    return (this.liveVolume ?? getSettings().volume) * this.sleepLevel();
+    return (this.liveVolume ?? getSettings().volume) * this.sleepLevel() * this.duck;
   }
 
   private sleepLevel() {

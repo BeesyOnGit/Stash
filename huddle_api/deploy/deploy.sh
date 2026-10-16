@@ -20,7 +20,7 @@ PORT="$(env_value PORT)"
 
 # ── Deploy ───────────────────────────────────────────────────────────────────
 echo "Deploying $IMAGE"
-docker compose pull api
+docker compose pull api livekit
 docker compose up -d --remove-orphans
 
 # ── Health check ─────────────────────────────────────────────────────────────
@@ -28,6 +28,10 @@ echo "Waiting for the API on port $PORT"
 for _ in $(seq 1 30); do
     if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/health"; then
         echo "API is up — $IMAGE"
+        if ! curl -fsS "http://127.0.0.1:7880" | grep -q OK; then
+            echo "WARNING: LiveKit (voice chat) is not answering on 7880. Last logs:" >&2
+            docker compose logs --tail 40 livekit >&2
+        fi
         echo "$IMAGE" > .deployed_image
         docker image prune -f > /dev/null
         exit 0

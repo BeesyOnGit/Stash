@@ -1150,7 +1150,7 @@ class PlayerServiceImpl {
   /** Pause in `minutes`, or at the end of the current song (`'endOfSong'`). */
   setSleep(when: number | 'endOfSong') {
     this.clearSleepTimeout();
-    this.setVolume(1);
+    this.setVolume(this.duck);
     const sleep: SleepTimer =
       when === 'endOfSong'
         ? { endOfSong: true }
@@ -1173,7 +1173,7 @@ class PlayerServiceImpl {
   cancelSleep(silent = false) {
     if (!this.state.sleep) return;
     this.clearSleepTimeout();
-    this.setVolume(1);
+    this.setVolume(this.duck);
     this.setState({ sleep: null });
     this.applyLoop();
     if (!silent) toast(tr('system.sleepOff'));
@@ -1196,7 +1196,11 @@ class PlayerServiceImpl {
    */
   private checkSleep() {
     const sleep = this.state.sleep;
-    if (!sleep || !('at' in sleep)) return;
+    if (!sleep || !('at' in sleep)) {
+      // A song loaded while ducking starts at full volume: bring it down too.
+      if (!this.fading) this.setVolume(this.duck);
+      return;
+    }
     const left = (sleep.at - Date.now()) / 1000;
     if (left <= 0) {
       const playing = this.state.isPlaying || this.wantsToPlay;
@@ -1208,12 +1212,20 @@ class PlayerServiceImpl {
     if (left < SLEEP_FADE_S && !this.fading) this.setVolume(this.sleepLevel());
   }
 
-  /** 1, or less during the sleep timer's fade-out. */
+  private duck = 1;
+
+  /** Lowers the music for a while (0â€“1, 1 = full): a huddle's voice chat while people talk. */
+  setDuck(level: number) {
+    this.duck = level;
+    if (!this.fading) this.setVolume(this.sleepLevel());
+  }
+
+  /** 1, or less during the sleep timer's fade-out or ducking. */
   private sleepLevel() {
     const sleep = this.state.sleep;
-    if (!sleep || !('at' in sleep)) return 1;
+    if (!sleep || !('at' in sleep)) return this.duck;
     const left = (sleep.at - Date.now()) / 1000;
-    return left < SLEEP_FADE_S ? Math.max(0.05, left / SLEEP_FADE_S) : 1;
+    return (left < SLEEP_FADE_S ? Math.max(0.05, left / SLEEP_FADE_S) : 1) * this.duck;
   }
 
   toggleShuffle() {

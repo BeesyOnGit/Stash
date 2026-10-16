@@ -49,6 +49,7 @@ import {
   CloseIcon,
   DownloadIcon,
   GripIcon,
+  MicIcon,
   MoreIcon,
   NextIcon,
   PauseIcon,
@@ -302,6 +303,14 @@ function Room({ v, room }: { v: HuddleView; room: RoomState }) {
             })}
           </Pressable>
           <Text numberOfLines={1} style={[font(500, 13), styles.flex, { color: ink, opacity: 0.85 }]}>{tr('huddle.listening', { count: room.members.length })}</Text>
+          {huddle.canVoice && (
+            <Pressable onPress={() => (v.voice ? setPanel('members') : joinVoice())} style={[styles.leaveBtn, styles.liveRow, v.voice?.live ? { backgroundColor: TALKING } : chip]}>
+              <MicIcon size={15} color={v.voice?.live ? '#fff' : ink} />
+              <Text style={[font(600, 13), { color: v.voice?.live ? '#fff' : ink }]}>
+                {!v.voice ? tr('huddle.joinVoice') : v.voice.live ? tr('huddle.voiceCount', { count: v.voice.ids.length }) : tr('huddle.voiceJoining')}
+              </Text>
+            </Pressable>
+          )}
           {!room.game && (
             <Pressable onPress={() => setPanel('game')} style={[styles.leaveBtn, chip, styles.liveRow]}>
               <QuestionIcon color={ink} />
@@ -347,6 +356,7 @@ function Room({ v, room }: { v: HuddleView; room: RoomState }) {
             />
           </View>
           {pane === 'list' ? <Playlist v={v} room={room} /> : <Chat v={v} room={room} />}
+          {v.voice && !typing && <VoiceBar v={v} room={room} />}
         </View>
       )}
       <Modal visible={panel === 'members'} transparent statusBarTranslucent navigationBarTranslucent animationType="fade" onRequestClose={() => setPanel(null)}>
@@ -358,6 +368,47 @@ function Room({ v, room }: { v: HuddleView; room: RoomState }) {
       <Modal visible={panel === 'game'} transparent statusBarTranslucent navigationBarTranslucent animationType="slide" onRequestClose={() => setPanel(null)}>
         <GamePicker room={room} onClose={() => setPanel(null)} />
       </Modal>
+    </View>
+  );
+}
+
+const TALKING = '#2EB86B';
+
+async function joinVoice() {
+  if (await huddle.joinVoice()) toast(tr('huddle.btHint'));
+  else if (huddle.getView().room) toast(tr('huddle.voiceFailed'));
+}
+
+/** Who's in the call (a green ring on whoever is talking), mute, ducking and leave. */
+function VoiceBar({ v, room }: { v: HuddleView; room: RoomState }) {
+  const t = useTheme();
+  const voice = v.voice!;
+  const pill = (on: boolean, color?: string) => [styles.leaveBtn, styles.liveRow, { backgroundColor: color ?? (on ? t.ink : t.fill2) }];
+  return (
+    <View style={[styles.voiceBar, { backgroundColor: t.card, borderColor: t.line }]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.voiceFaces}>
+        {voice.ids.map(id => {
+          const m = room.members.find(x => x.id === id);
+          return (
+            <View key={id} style={[styles.voiceFace, { backgroundColor: huddleColor(m?.color ?? 7), borderColor: voice.speaking.includes(id) ? TALKING : 'transparent', opacity: voice.mutedIds.includes(id) ? 0.55 : 1 }]}>
+              <Text style={[font(600, 12), { color: '#fff' }]}>{initial(m?.name ?? '?')}</Text>
+            </View>
+          );
+        })}
+        {!voice.live && <Text style={[font(500, 13), { color: t.muted }]}>{tr('huddle.voiceJoining')}</Text>}
+      </ScrollView>
+      <View style={styles.liveRow}>
+        <Pressable onPress={() => huddle.toggleMute()} disabled={!voice.live} style={pill(false, voice.muted ? t.danger : undefined)}>
+          <MicIcon size={15} color={voice.muted ? '#fff' : t.ink} />
+          <Text style={[font(600, 13), { color: voice.muted ? '#fff' : t.ink }]}>{voice.muted ? tr('huddle.unmute') : tr('huddle.mute')}</Text>
+        </Pressable>
+        <Pressable onPress={() => huddle.toggleDuck()} accessibilityRole="switch" accessibilityState={{ checked: voice.duck }} style={[pill(voice.duck), styles.flex]}>
+          <Text numberOfLines={1} style={[font(600, 12), { color: voice.duck ? t.bg : t.ink }]}>{tr('huddle.duck')}</Text>
+        </Pressable>
+        <Pressable onPress={() => huddle.leaveVoice()} style={pill(false, t.danger)}>
+          <Text style={[font(600, 13), { color: '#fff' }]}>{tr('huddle.leave')}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -975,7 +1026,7 @@ function Members({ v, room, onClose }: { v: HuddleView; room: RoomState; onClose
                   <Text style={[font(600, 15), { color: t.ink }]}>{m.id === v.you ? tr('huddle.you') : m.name}</Text>
                   {room.host === m.id && <View style={[styles.hostBadge, { backgroundColor: t.accentSoft }]}><Text style={[mono(600, 10), { color: t.accentInk }]}>{tr('huddle.host').toUpperCase()}</Text></View>}
                 </View>
-                <Text style={[font(400, 12, 1.4), { color: t.muted, marginTop: 2 }]}>{memberSub(room, v.you, m)}</Text>
+                <Text style={[font(400, 12, 1.4), { color: t.muted, marginTop: 2 }]}>{memberSub(room, v.you, m, v.voice)}</Text>
               </View>
             </View>
           ))}
@@ -1196,6 +1247,9 @@ const styles = StyleSheet.create({
   avatar: { width: 26, height: 26, marginLeft: -6, borderRadius: 13, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   pct: { position: 'absolute', bottom: -8, paddingHorizontal: 3, height: 12, borderRadius: 6, justifyContent: 'center' },
   leaveBtn: { height: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center' },
+  voiceBar: { marginHorizontal: 12, marginTop: 6, marginBottom: 8, padding: 10, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, gap: 10 },
+  voiceFaces: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 34 },
+  voiceFace: { width: 34, height: 34, borderRadius: 17, borderWidth: 2.5, alignItems: 'center', justifyContent: 'center' },
   mini: { width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   glow: { position: 'absolute', left: -14, top: -14, right: -14, bottom: -14, borderRadius: 40 },
   seekHit: { height: 18, justifyContent: 'center' },

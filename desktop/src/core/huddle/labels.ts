@@ -1,7 +1,7 @@
 /** Texts for the huddle screens, from the room's codes. Same file in both apps. */
 import { tr, type Key } from '../i18n';
 import { sourceName } from '../sources';
-import { tasteMatch, vibeOf, type HuddleChat, type HuddleError, type HuddleLast, type HuddleMember, type HuddleView, type RoomState, type SharedTrack } from './core';
+import { tasteMatch, vibeOf, type HuddleChat, type HuddleError, type HuddleLast, type HuddleMember, type HuddleView, type RoomState, type SharedTrack, type VoiceView } from './core';
 
 export const ago = (at: number) => {
   const m = Math.floor((Date.now() - at) / 60000);
@@ -79,10 +79,18 @@ export function statusText(v: HuddleView): string | null {
 export const vibeText = (t: SharedTrack | null) => tr(`huddle.vibe.${vibeOf(t?.genre)}` as Key);
 
 /** A member's line in the members list: taste match, songs added, reactions. */
-export function memberSub(room: RoomState, you: string | null, m: HuddleMember): string {
+/** Talking, Muted or In voice, for someone in the call you're in. */
+export function voiceStatus(voice: VoiceView | null, id: string): string | null {
+  if (!voice?.ids.includes(id)) return null;
+  if (voice.speaking.includes(id)) return tr('huddle.talking');
+  return voice.mutedIds.includes(id) ? tr('huddle.muted') : tr('huddle.inVoice');
+}
+
+export function memberSub(room: RoomState, you: string | null, m: HuddleMember, voice: VoiceView | null = null): string {
   const pct = m.id === you ? null : tasteMatch(room, you, m.id);
   const added = room.queue.filter(t => t.by === m.id).length;
   return [
+    voiceStatus(voice, m.id),
     pct != null && tr('huddle.tasteMatch', { pct }),
     tr('huddle.songsAdded', { count: added }),
     tr('huddle.reactCount', { count: m.reacts }),

@@ -154,6 +154,32 @@ export interface HuddleView {
   burst: { id: number; emoji: string; n: number; at: number } | null;
   /** The current song's shoutout, popped up when it starts. */
   shout: { key: string; at: number } | null;
+  /** Voice chat, while you're in it (or joining). */
+  voice: VoiceView | null;
+}
+
+export interface VoiceView {
+  /** False while joining. */
+  live: boolean;
+  /** Member ids in the call (you too), who's talking and who's muted. */
+  ids: string[];
+  speaking: string[];
+  mutedIds: string[];
+  muted: boolean;
+  /** Lower the music while the others talk. */
+  duck: boolean;
+}
+
+/** Who's in the call, from the voice server (its identities are member ids). */
+export interface VoiceUpdate {
+  ids: string[];
+  speaking: string[];
+  muted: string[];
+}
+
+export interface VoiceCall {
+  setMuted(muted: boolean): Promise<void>;
+  leave(): void;
 }
 
 /** Who you are in a huddle: this device, a name and a colour. */
@@ -183,6 +209,13 @@ export interface HuddleHost {
     setRemote(remote: HuddleRemote | null): void;
     stop(): void;
   };
+  /** Voice chat; missing where this device can't do it. */
+  voice?: {
+    /** Joins the call with the mic on. `ended` fires if the call drops for good. */
+    connect(url: string, token: string, on: { update(u: VoiceUpdate): void; ended(): void }): Promise<VoiceCall>;
+    /** The music's level while ducking, 0..1 (1 = as set). */
+    duck(level: number): void;
+  };
 }
 
 export interface HuddleRemote {
@@ -201,12 +234,15 @@ const DRIFT_S = 0.45;
 const SETTLE_MS = 1500;
 const PING_EVERY_MS = 10_000;
 const RETRY_MS = 3000;
+/** The music's level while the others talk, and how long it waits after they stop. */
+const DUCK_LEVEL = 0.3;
+const DUCK_HOLD_MS = 800;
 
 export const HUDDLE_COLORS = ['#E0532F', '#8B5CF6', '#2F80C2', '#2E9D62', '#D99A2B', '#D6457A', '#0FA3A3', '#6B6A70'];
 export const huddleColor = (i: number) => HUDDLE_COLORS[i % HUDDLE_COLORS.length];
 
 export function createHuddle(host: HuddleHost) {
-  const empty = { room: null, you: null, cache: {}, floats: [], mine: {}, burst: null, shout: null };
+  const empty = { room: null, you: null, cache: {}, floats: [], mine: {}, burst: null, shout: null, voice: null };
   let view: HuddleView = { status: 'idle', error: null, ...empty };
   const listeners = new Set<() => void>();
   const set = (patch: Partial<HuddleView>) => {
@@ -234,6 +270,13 @@ export function createHuddle(host: HuddleHost) {
   /** Round already reported ended, and when this device saw its reveal. */
   let endSent = 0;
   let revealSeen: { round: number; at: number; sent: boolean } | null = null;
+  let call: VoiceCall | null = null;
+  /** Bumped on every join and leave: callbacks from an older call are ignored. */
+  let voiceGen = 0;
+  let duckOn = true;
+  let duckLevel = 1;
+  let duckFade: ReturnType<typeof setInterval> | null = null;
+  let duckHold: ReturnType<typeof setTimeout> | null = null;
 
   const serverNow = () => Date.now() + offset;
   const base = () => host.serverUrl().replace(/\/+$/, '');
@@ -330,6 +373,7 @@ export function createHuddle(host: HuddleHost) {
 
   function leave(stopPlayer = true) {
     const wasIn = !!joinWith || !!view.room;
+    leaveVoice();
     joinWith = null;
     ws?.close();
     ws = null;
@@ -477,6 +521,86 @@ export function createHuddle(host: HuddleHost) {
     }
   }
 
+  // ---------- voice chat ----------
+
+  /** Joins the call: a token from the huddle server (members only), then the voice server. */
+  async function joinVoice(): Promise<boolean> {
+    const code = view.room?.code;
+    if (!host.voice || !code || !view.you || view.voice) return !!view.voice;
+    const gen = ++voiceGen;
+    const current = () => gen === voiceGen && !!view.voice;
+    set({ voice: { live: false, ids: [], speaking: [], mutedIds: [], muted: false, duck: duckOn } });
+    try {
+      const res = await fetch(`${base()}/huddles/${code}/voice?id=${encodeURIComponent(view.you)}`);
+      if (!res.ok) throw new Error(`voice token: HTTP ${res.status}`);
+      const { url, token } = await res.json();
+      if (!current()) return false; // left meanwhile
+      const c = await host.voice.connect(url, token, {
+        update: u => {
+          if (!current()) return;
+          set({ voice: { ...view.voice!, ids: u.ids, speaking: u.speaking, mutedIds: u.muted } });
+          duckForSpeakers();
+        },
+        ended: () => current() && leaveVoice(),
+      });
+      if (!current()) {
+        c.leave();
+        return false;
+      }
+      call = c;
+      set({ voice: { ...view.voice!, live: true } });
+      return true;
+    } catch (e) {
+      console.warn("Huddle: couldn't join voice", e);
+      if (gen === voiceGen) set({ voice: null });
+      return false;
+    }
+  }
+
+  function leaveVoice() {
+    voiceGen++;
+    call?.leave();
+    call = null;
+    if (view.voice) set({ voice: null });
+    duckForSpeakers();
+  }
+
+  async function toggleMute() {
+    const v = view.voice;
+    if (!v || !call) return;
+    set({ voice: { ...v, muted: !v.muted } });
+    await call.setMuted(!v.muted).catch(() => view.voice && set({ voice: { ...view.voice, muted: v.muted } }));
+  }
+
+  function toggleDuck() {
+    duckOn = !duckOn;
+    if (view.voice) set({ voice: { ...view.voice, duck: duckOn } });
+    duckForSpeakers();
+  }
+
+  /** Music down while someone else talks; back up a moment after they stop (right away out of the call). */
+  function duckForSpeakers() {
+    const v = view.voice;
+    const down = !!v?.duck && v.speaking.some(id => id !== view.you);
+    if (duckHold) clearTimeout(duckHold);
+    duckHold = null;
+    if (down) fadeMusic(DUCK_LEVEL);
+    else if (duckLevel !== 1) duckHold = setTimeout(() => fadeMusic(1), v ? DUCK_HOLD_MS : 0);
+  }
+
+  function fadeMusic(target: number) {
+    if (duckFade) clearInterval(duckFade);
+    duckFade = setInterval(() => {
+      const step = Math.min(0.07, Math.abs(target - duckLevel));
+      duckLevel = Math.round((duckLevel + Math.sign(target - duckLevel) * step) * 100) / 100;
+      host.voice?.duck(duckLevel);
+      if (duckLevel === target && duckFade) {
+        clearInterval(duckFade);
+        duckFade = null;
+      }
+    }, 40);
+  }
+
   // ---------- the app's buttons, sent to the room ----------
 
   const remote: HuddleRemote = {
@@ -519,6 +643,12 @@ export function createHuddle(host: HuddleHost) {
     startGame: (key: string, decoys: GameOpt[]) => send({ t: 'gameStart', key, decoys }),
     guess: (opt: number) => send({ t: 'guess', opt }),
     closeShout: () => set({ shout: null }),
+    /** Can this device do voice chat? */
+    canVoice: !!host.voice,
+    joinVoice,
+    leaveVoice,
+    toggleMute,
+    toggleDuck,
     serverNow,
     /** Is this song (by library id) already in the shared playlist? */
     has: (key: string) => !!view.room?.queue.some(t => t.key === key),

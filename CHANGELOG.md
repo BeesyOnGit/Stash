@@ -7,6 +7,14 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.7
+
+- **Talk in a huddle:** tap **Join voice** at the top of a huddle to talk with the others while the music plays. The voice bar shows who's in the call, with a green ring around whoever is talking, and has **Mute** and **Leave**. The members list shows who's in voice, talking or muted.
+- **Music down while people talk:** with **Lower music while people talk** on (it is by default), the music gets quieter while someone else speaks and comes back up when they stop.
+- **On the phone:** stash asks for the microphone the first time you join voice. Voice keeps working with the screen locked, and a notification shows while you're in the call. With Bluetooth headphones, music sounds worse while you're in voice: turning on the mic puts them in call mode.
+- **On the computer:** voice works on Windows and macOS. On Linux, the **Join voice** button doesn't show, because the system's web view usually has no voice support.
+- **Private calls:** only people in the huddle can join its call. Voice runs on stash's own server, not a third-party service.
+
 ## 1.3.6
 
 - **Guess the song:** in a huddle, tap **Guess the song** and pick a mystery song from the shared playlist or a search. It plays with the cover blurred, and everyone else has 20 seconds to pick it from 4 similar songs. The fastest right answers get 3, 2 and 1 points. Then the answer is revealed with who picked what and a leaderboard, and the music goes back to where it was.

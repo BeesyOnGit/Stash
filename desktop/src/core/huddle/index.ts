@@ -11,6 +11,7 @@ import { sourceFor } from '../sources';
 import type { OnlineResult, QueueItem, TrackSource } from '../types';
 import { createHuddle, type SharedTrack } from './core';
 import { HUDDLE_SERVER } from './server';
+import { connectVoice } from './voice';
 
 export * from './core';
 
@@ -85,6 +86,11 @@ export const huddle = createHuddle({
     setRemote: r => PlayerService.setRemote(r),
     stop: () => PlayerService.stop(),
   },
+  // Linux's WebKitGTK usually comes without WebRTC: no voice there.
+  voice:
+    typeof RTCPeerConnection === 'undefined'
+      ? undefined
+      : { connect: connectVoice, duck: level => PlayerService.setDuck(level) },
 });
 
 export const useHuddle = () => useSyncExternalStore(huddle.subscribe, huddle.getView);

@@ -36,6 +36,7 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
       android:name=".MainApplication"
@@ -75,6 +76,12 @@
         android:name=".sync.SyncService"
         android:exported="false"
         android:foregroundServiceType="dataSync" />
+
+      <!-- Huddle voice chat: the mic stays on with the screen locked (bubble/VoiceService.kt) -->
+      <service
+        android:name=".bubble.VoiceService"
+        android:exported="false"
+        android:foregroundServiceType="microphone" />
 
       <!-- Android Auto: browse screens + now playing, mirroring the app's player (car/CarService.kt) -->
       <meta-data

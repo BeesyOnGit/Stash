@@ -110,7 +110,7 @@ jobs:
       - name: Upload stack files
         run: |
           ssh vps "mkdir -p ${DEPLOY_PATH}"
-          scp deploy/docker-compose.yml deploy/deploy.sh deploy/.env.production.example "vps:${DEPLOY_PATH}/"
+          scp deploy/docker-compose.yml deploy/livekit.yml deploy/deploy.sh deploy/.env.production.example "vps:${DEPLOY_PATH}/"
 
       - name: Deploy
         run: |

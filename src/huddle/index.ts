@@ -1,6 +1,7 @@
 /** The huddle on the phone: ./core, with the phone's files, downloads and player. */
+import { AndroidAudioTypePresets, AudioSession } from '@livekit/react-native';
 import { useSyncExternalStore } from 'react';
-import { AppState } from 'react-native';
+import { AppState, NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { getTrack } from '../db/database';
 import { tr } from '../i18n';
@@ -13,11 +14,15 @@ import { sourceFor } from '../sources';
 import type { OnlineResult, QueueItem, TrackSource } from '../types';
 import { createHuddle, type SharedTrack } from './core';
 import { HUDDLE_SERVER } from './server';
+import { connectVoice } from './voice';
 
 export * from './core';
 
 const { fs } = ReactNativeBlobUtil;
 const CACHE_DIR = `${fs.dirs.CacheDir}/huddle`;
+/** bubble/BubbleModule.kt: the foreground service that keeps the mic on with the screen locked. */
+const Voice: { startVoice(title: string, text: string): void; stopVoice(): void } | undefined =
+  Platform.OS === 'android' ? NativeModules.StashBubble : undefined;
 
 function toItem(t: SharedTrack, path: string | null): QueueItem {
   return {
@@ -87,6 +92,41 @@ export const huddle = createHuddle({
     isPlaying: () => PlayerService.getState().isPlaying,
     setRemote: r => PlayerService.setRemote(r),
     stop: () => PlayerService.stop(),
+  },
+  voice: {
+    async connect(url, token, on) {
+      if (Platform.OS === 'android') {
+        const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (mic !== PermissionsAndroid.RESULTS.GRANTED) throw new Error('no microphone permission');
+        await AudioSession.configureAudio({
+          android: {
+            preferredOutputList: ['bluetooth', 'headset', 'speaker'],
+            // Call mode, for the phone's echo cancellation; but the music keeps playing.
+            audioTypeOptions: { ...AndroidAudioTypePresets.communication, manageAudioFocus: false },
+          },
+        });
+      }
+      await AudioSession.startAudioSession();
+      Voice?.startVoice(tr('huddle.voiceNotif'), huddle.getView().room?.name ?? '');
+      const stop = () => {
+        Voice?.stopVoice();
+        AudioSession.stopAudioSession();
+      };
+      try {
+        const call = await connectVoice(url, token, on);
+        return {
+          setMuted: call.setMuted,
+          leave: () => {
+            call.leave();
+            stop();
+          },
+        };
+      } catch (e) {
+        stop();
+        throw e;
+      }
+    },
+    duck: level => PlayerService.setDuck(level),
   },
 });
 
