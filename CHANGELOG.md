@@ -9,7 +9,7 @@ later on GitHub (Releases → Edit) without rebuilding.
 
 ## 1.3.7
 
-- **Talk in a huddle:** tap **Join voice** at the top of a huddle to talk with the others while the music plays. The voice bar shows who's in the call, with a green ring around whoever is talking, and has **Mute** and **Leave**. The members list shows who's in voice, talking or muted.
+- **Talk in a huddle:** tap **Join voice** at the top of a huddle to talk with the others while the music plays. The voice bar shows who's in the call, with a green ring around whoever is talking, and has **Mute** and **Leave**. The members list shows who's in voice, talking or muted, and the button shows **Voice · 2** when others are already talking. A short sound plays when someone joins or leaves the call.
 - **Music down while people talk:** with **Lower music while people talk** on (it is by default), the music gets quieter while someone else speaks and comes back up when they stop.
 - **On the phone:** stash asks for the microphone the first time you join voice. Voice keeps working with the screen locked, and a notification shows while you're in the call. With Bluetooth headphones, music sounds worse while you're in voice: turning on the mic puts them in call mode.
 - **On the computer:** voice works on Windows and macOS. On Linux, the **Join voice** button doesn't show, because the system's web view usually has no voice support.

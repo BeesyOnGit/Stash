@@ -45,6 +45,8 @@ pub struct Member {
     pub reacts: u32,
     /// `"key emoji"` pairs this member reacted with (for taste match), newest last, up to 60.
     pub likes: VecDeque<String>,
+    /// In the huddle's voice chat (said by the app; the call itself is on LiveKit).
+    pub voice: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -188,6 +190,8 @@ pub enum ClientMsg {
     GameEnd,
     /// Sent by everyone after the reveal; goes back to what was playing.
     GameClose,
+    /// Joined or left the voice chat.
+    Voice { on: bool },
 }
 
 #[derive(Serialize)]
@@ -200,6 +204,7 @@ pub struct MemberView<'a> {
     pub ready: bool,
     pub reacts: u32,
     pub likes: &'a VecDeque<String>,
+    pub voice: bool,
 }
 
 #[derive(Serialize)]

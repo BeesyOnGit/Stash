@@ -79,18 +79,32 @@ export function statusText(v: HuddleView): string | null {
 export const vibeText = (t: SharedTrack | null) => tr(`huddle.vibe.${vibeOf(t?.genre)}` as Key);
 
 /** A member's line in the members list: taste match, songs added, reactions. */
-/** Talking, Muted or In voice, for someone in the call you're in. */
-export function voiceStatus(voice: VoiceView | null, id: string): string | null {
-  if (!voice?.ids.includes(id)) return null;
-  if (voice.speaking.includes(id)) return tr('huddle.talking');
-  return voice.mutedIds.includes(id) ? tr('huddle.muted') : tr('huddle.inVoice');
+/** Talking, Muted or In voice; null when they're not in the call. Talking and Muted are only known from inside the call. */
+export function voiceStatus(voice: VoiceView | null, m: HuddleMember): string | null {
+  if (voice?.speaking.includes(m.id)) return tr('huddle.talking');
+  if (voice?.mutedIds.includes(m.id)) return tr('huddle.muted');
+  return m.voice || voice?.ids.includes(m.id) ? tr('huddle.inVoice') : null;
 }
 
-export function memberSub(room: RoomState, you: string | null, m: HuddleMember, voice: VoiceView | null = null): string {
+/** The header button: "Voice Â· N" when others are already in the call. */
+export function joinVoiceText(room: RoomState, you: string | null): string {
+  const n = room.members.filter(m => m.voice && m.id !== you).length;
+  return n ? tr('huddle.voiceCount', { count: n }) : tr('huddle.joinVoice');
+}
+
+/** The voice bar's second line. */
+export function callStatus(room: RoomState, you: string | null, voice: VoiceView): string {
+  if (!voice.live) return tr('huddle.voiceJoining');
+  const talker = room.members.find(m => m.id !== you && voice.speaking.includes(m.id));
+  if (talker) return tr(voice.duck ? 'huddle.talkingDucked' : 'huddle.talkingName', { name: talker.name });
+  if (voice.muted) return tr('huddle.youMuted');
+  return tr(voice.duck ? 'huddle.micDuck' : 'huddle.micFull');
+}
+
+export function memberSub(room: RoomState, you: string | null, m: HuddleMember): string {
   const pct = m.id === you ? null : tasteMatch(room, you, m.id);
   const added = room.queue.filter(t => t.by === m.id).length;
   return [
-    voiceStatus(voice, m.id),
     pct != null && tr('huddle.tasteMatch', { pct }),
     tr('huddle.songsAdded', { count: added }),
     tr('huddle.reactCount', { count: m.reacts }),

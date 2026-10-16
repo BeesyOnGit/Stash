@@ -14,7 +14,8 @@ import { sourceFor } from '../sources';
 import type { OnlineResult, QueueItem, TrackSource } from '../types';
 import { createHuddle, type SharedTrack } from './core';
 import { HUDDLE_SERVER } from './server';
-import { connectVoice } from './voice';
+import { AudioContext } from 'react-native-audio-api';
+import { chime, connectVoice } from './voice';
 
 export * from './core';
 
@@ -48,6 +49,8 @@ function toItem(t: SharedTrack, path: string | null): QueueItem {
     streamUrl: path ? `file://${path}` : undefined,
   };
 }
+
+let chimeCtx: AudioContext | undefined;
 
 export const huddle = createHuddle({
   serverUrl: () => HUDDLE_SERVER,
@@ -127,6 +130,11 @@ export const huddle = createHuddle({
       }
     },
     duck: level => PlayerService.setDuck(level),
+    chime: up => {
+      try {
+        chime((chimeCtx ??= new AudioContext()), up);
+      } catch {}
+    },
   },
 });
 

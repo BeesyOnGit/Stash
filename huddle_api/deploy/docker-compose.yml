@@ -18,7 +18,7 @@ services:
         max-file: "5"
 
   livekit:
-    image: livekit/livekit-server:v1.8.4
+    image: livekit/livekit-server:v1.13.7
     restart: unless-stopped
     command: --config /etc/livekit.yml
     environment:

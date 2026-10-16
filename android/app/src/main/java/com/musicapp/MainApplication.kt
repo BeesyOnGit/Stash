@@ -1,5 +1,7 @@
 package com.musicapp
 
+import com.livekit.reactnative.LiveKitReactNative
+import com.livekit.reactnative.audio.AudioType
 import android.app.Application
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -38,6 +40,8 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // WebRTC's audio for the huddle's voice chat; before React Native starts.
+    LiveKitReactNative.setup(this, AudioType.CommunicationAudioType())
     loadReactNative(this)
     // Notification / lock screen ⏮ ⏭ move through the JS queue (react-native-video
     // is patched for this: patches/react-native-video+*.patch). Same events as the car's.

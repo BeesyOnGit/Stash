@@ -8,6 +8,17 @@ import 'event-target-polyfill'; // EventTarget / Event
 
 const g = globalThis as any;
 
+// livekit-client (protobuf) asks for { fatal: true }, which fast-text-encoding refuses.
+// ponytail: bad UTF-8 is replaced instead of throwing; fine for LiveKit's own messages
+{
+  const Decoder = g.TextDecoder;
+  g.TextDecoder = class extends Decoder {
+    constructor(label?: string, opts?: { fatal?: boolean; ignoreBOM?: boolean }) {
+      super(label, opts && { ...opts, fatal: false });
+    }
+  };
+}
+
 if (typeof g.CustomEvent !== 'function') {
   g.CustomEvent = class CustomEvent<T = unknown> extends g.Event {
     detail: T;

@@ -106,13 +106,15 @@ impl Room {
             m.name = name;
             m.color = color;
             m.ready.clear();
+            // The app says again if it's still in the call.
+            m.voice = false;
             return (id, conn);
         }
         if self.host.is_empty() {
             self.host = id.clone();
         }
         let kind = if self.members.is_empty() { "start" } else { "join" };
-        self.members.push(Member { id: id.clone(), name, color, tx, ready: HashSet::new(), conn, reacts: 0, likes: VecDeque::new() });
+        self.members.push(Member { id: id.clone(), name, color, tx, ready: HashSet::new(), conn, reacts: 0, likes: VecDeque::new(), voice: false });
         let arg = if kind == "start" { self.code.clone() } else { String::new() };
         self.sys(&id, kind, arg);
         (id, conn)
@@ -435,6 +437,13 @@ impl Room {
                 }
                 self.sys(who, "move", title);
             }
+            ClientMsg::Voice { on } => {
+                let Some(m) = self.members.iter_mut().find(|m| m.id == who) else { return (None, false) };
+                if m.voice == on {
+                    return (None, false);
+                }
+                m.voice = on;
+            }
             ClientMsg::Ready { key } => {
                 let Some(m) = self.members.iter_mut().find(|m| m.id == who) else { return (None, false) };
                 if !m.ready.insert(key) {
@@ -560,6 +569,7 @@ impl Room {
                     ready: key.is_some_and(|k| m.ready.contains(k)),
                     reacts: m.reacts,
                     likes: &m.likes,
+                    voice: m.voice,
                 })
                 .collect(),
             queue: &self.queue,
@@ -794,6 +804,17 @@ mod tests {
         assert!(r.game.is_some(), "too early");
         r.handle(&a, ClientMsg::GameClose, 13_000 + REVEAL_MS);
         assert!(r.game.is_none() && r.index == 0);
+    }
+
+    #[test]
+    fn voice_flag_is_shared_and_reset_on_reconnect() {
+        let mut r = Room::new("ABCDEF".into(), "Test");
+        let a = r.add_member(Some("dev-a"), "A", None, unbounded_channel().0).0;
+        assert_eq!(r.handle(&a, ClientMsg::Voice { on: true }, 0), (None, true));
+        assert!(r.state_json().contains(r#""voice":true"#));
+        assert_eq!(r.handle(&a, ClientMsg::Voice { on: true }, 0), (None, false), "no change, no broadcast");
+        r.add_member(Some("dev-a"), "A", None, unbounded_channel().0);
+        assert!(!r.member(&a).unwrap().voice, "the app says again after reconnecting");
     }
 
     #[test]
