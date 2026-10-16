@@ -48,6 +48,8 @@ input::placeholder, textarea::placeholder { color: var(--muted2); }
 @keyframes rmFloat { 0% { transform: translate(0,0) scale(.4); opacity: 0 } 8% { transform: translate(0,-16px) scale(1); opacity: 1 } 35% { transform: translate(14px,-130px) } 65% { transform: translate(-8px,-250px); opacity: 1 } 100% { transform: translate(6px,-380px); opacity: 0 } }
 @keyframes rmBurst { 0% { transform: scale(.3); opacity: 0 } 14% { transform: scale(1.15); opacity: 1 } 24% { transform: scale(1) } 78% { transform: scale(1); opacity: 1 } 100% { transform: scale(1.04) translateY(-16px); opacity: 0 } }
 @keyframes rmPulse { 0%,100% { transform: scale(.94); opacity: .55 } 50% { transform: scale(1.06); opacity: 1 } }
+@keyframes rmSpeak { 0%,100% { box-shadow: 0 0 0 2px #3DBE7A } 50% { box-shadow: 0 0 0 5px rgba(61,190,122,.35) } }
+@keyframes hdPop { from { transform: scale(.6); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes hdUp { from { transform: translateY(8px); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes recPulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
 /* Song change animations, two copies each so every change restarts one. */

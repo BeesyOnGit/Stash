@@ -16,7 +16,7 @@ import {
   type RoomState,
   type SharedTrack,
 } from '../core/huddle';
-import { ago, chatText, errorText, gameText, lastText, memberSub, recapOf, sourceText, statusText, vibeText } from '../core/huddle/labels';
+import { ago, callStatus, chatText, errorText, gameText, joinVoiceText, lastText, memberSub, recapOf, sourceText, statusText, vibeText, voiceStatus } from '../core/huddle/labels';
 import { tr, useLanguage, type Key } from '../core/i18n';
 import { useDownloadProgress, useLibrary } from '../core/player/hooks';
 import { saveSettings, useSettings } from '../core/services/settings';
@@ -25,7 +25,7 @@ import { toast } from '../core/state/ui';
 import { formatTime, paletteFor } from '../core/theme';
 import { artworkUri, type OnlineResult, type Track } from '../core/types';
 import { setApp } from './appState';
-import { CheckIcon, ChevronLeftIcon, CloseIcon, DotsIcon, DownloadIcon, GripIcon, MicIcon, NextIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, PrevIcon, SearchIcon, VolumeIcon } from './icons';
+import { CheckIcon, ChevronLeftIcon, CloseIcon, DotsIcon, DownloadIcon, GripIcon, MicIcon, NextIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, PrevIcon, SearchIcon } from './icons';
 import { ACCENT, Cover } from './kit';
 import { VolumeControl } from './player/PlayerBar';
 
@@ -175,7 +175,7 @@ function Room({ v, room }: { v: HuddleView; room: RoomState }) {
           )}
           {editEmos && room.host === v.you && <EmoEditor room={room} onDone={() => setEditEmos(false)} />}
         </div>
-        {v.voice && <VoiceBar v={v} room={room} deep={deep} />}
+        {v.voice && <VoiceBar v={v} room={room} />}
       </div>
       <Playlist v={v} room={room} bg={tint(10, 'var(--bg)')} />
       <Chat v={v} room={room} bg={tint(6, 'var(--card)')} />
@@ -226,18 +226,15 @@ function RoomHeader({ v, room, bg, ink, onPanel }: { v: HuddleView; room: RoomSt
         {room.code}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 012-2h8" /></svg>
       </button>
-      {huddle.canVoice && (
-        <button
-          onClick={() => (v.voice ? onPanel('members') : joinVoice())}
-          style={{ ...fab, height: 34, padding: '0 14px 0 11px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, font: font(600, 13), whiteSpace: 'nowrap', background: v.voice?.live ? TALKING : fab.background, color: v.voice?.live ? '#fff' : 'inherit' }}
-        >
-          <MicIcon size={16} />
-          {!v.voice ? tr('huddle.joinVoice') : v.voice.live ? tr('huddle.voiceCount', { count: v.voice.ids.length }) : tr('huddle.voiceJoining')}
-        </button>
-      )}
       <button onClick={() => onPanel('members')} title={tr('huddle.members')} style={{ border: 0, background: 'transparent', color: 'inherit', padding: '0 0 6px', cursor: 'pointer', flex: 'none' }}>
         <Avatars v={v} room={room} bg={bg} ink={ink} size={30} />
       </button>
+      {huddle.canVoice && !v.voice && (
+        <button onClick={joinVoice} title={tr('huddle.joinVoiceHint')} style={{ ...fab, height: 32, padding: '0 12px 0 10px', borderRadius: 999, display: 'flex', alignItems: 'center', gap: 6, font: font(500, 13), whiteSpace: 'nowrap' }}>
+          <MicIcon size={15} />
+          {joinVoiceText(room, v.you)}
+        </button>
+      )}
       <div style={{ position: 'relative', flex: 'none' }}>
         <button onClick={() => setMenu(m => !m)} title={tr('huddle.more')} style={{ ...fab, width: 34, height: 34, borderRadius: '50%', display: 'grid', placeItems: 'center', padding: 0 }}>
           <DotsIcon size={18} />
@@ -257,43 +254,55 @@ function RoomHeader({ v, room, bg, ink, onPanel }: { v: HuddleView; room: RoomSt
   );
 }
 
-const TALKING = '#2EB86B';
-
 async function joinVoice() {
   if (await huddle.joinVoice()) toast(tr('huddle.btHint'));
   else if (huddle.getView().room) toast(tr('huddle.voiceFailed'));
 }
 
+/** A pulsing green ring on whoever is talking. */
+const talkAnim = (v: HuddleView, id: string, idle: string) => (v.voice?.speaking.includes(id) ? 'rmSpeak 1s ease-in-out infinite' : idle);
+
+const svg = (d: ReactNode, size = 18) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{d}</svg>
+);
+const MIC = <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0014 0M12 18v3" /></>;
+const MIC_OFF = <path d="M15 9.3V6a3 3 0 00-5.7-1.3M9 9v2a3 3 0 004.6 2.5M5 11a7 7 0 0011.3 5.5M19 11a7 7 0 01-.6 2.8M12 18v3M3 3l18 18" />;
+const DUCK = <><path d="M9 18V5l10-2v7" /><circle cx="6.5" cy="18" r="2.5" /><path d="M17 14v7M14.5 18.5L17 21l2.5-2.5" /></>;
+const HANG_UP = <path d="M3 15.5c5-4.7 13-4.7 18 0l-2.3 2.3-3.2-1.6v-2.6a12 12 0 00-7 0v2.6l-3.2 1.6z" />;
+
 /** Who's in the call (a green ring on whoever is talking), mute, ducking and leave. */
-function VoiceBar({ v, room, deep }: { v: HuddleView; room: RoomState; deep: boolean }) {
+function VoiceBar({ v, room }: { v: HuddleView; room: RoomState }) {
   const voice = v.voice!;
-  const pill: CSSProperties = { height: 36, padding: '0 14px 0 11px', border: 0, borderRadius: 999, background: 'color-mix(in srgb,currentColor 10%,transparent)', color: 'inherit', display: 'flex', alignItems: 'center', gap: 7, font: font(600, 13), cursor: 'pointer', whiteSpace: 'nowrap' };
+  const round = (bg: string, fg: string): CSSProperties => ({ width: 40, height: 40, border: 0, borderRadius: '50%', background: bg, color: fg, display: 'grid', placeItems: 'center', cursor: 'pointer', padding: 0, flex: 'none' });
   return (
-    <div style={{ position: 'relative', zIndex: 5, margin: '0 20px 18px', padding: '8px 8px 8px 14px', borderRadius: 999, background: deep ? 'rgba(0,0,0,.3)' : 'rgba(255,255,255,.62)', backdropFilter: 'blur(14px)', boxShadow: '0 6px 20px rgba(0,0,0,.12)', display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+    <div style={{ position: 'relative', margin: '0 16px 14px', borderRadius: 18, boxShadow: '0 10px 30px rgba(0,0,0,.18)', padding: '8px 8px 8px 12px', display: 'flex', alignItems: 'center', gap: 10, background: 'var(--card)', color: 'var(--ink)', animation: 'hdUp .25s', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flex: 'none' }}>
         {voice.ids.map(id => {
           const m = room.members.find(x => x.id === id);
-          const talking = voice.speaking.includes(id);
           return (
-            <span key={id} title={m?.name} style={{ position: 'relative', width: 30, height: 30, borderRadius: '50%', background: huddleColor(m?.color ?? 7), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 12), flex: 'none', boxShadow: talking ? `0 0 0 2px ${TALKING}` : 'none', transition: 'box-shadow .15s' }}>
+            <span key={id} title={m?.name} style={{ width: 28, height: 28, borderRadius: '50%', background: huddleColor(m?.color ?? 7), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 11), flex: 'none', animation: talkAnim(v, id, 'hdPop .3s') }}>
               {initial(m?.name ?? '?')}
-              {voice.mutedIds.includes(id) && (
-                <span style={{ position: 'absolute', right: -3, bottom: -3, width: 15, height: 15, borderRadius: '50%', background: 'var(--danger)', display: 'grid', placeItems: 'center' }}><MicIcon off size={9} /></span>
-              )}
             </span>
           );
         })}
-        {!voice.live && <span style={{ font: font(500, 13), opacity: 0.75 }}>{tr('huddle.voiceJoining')}</span>}
       </div>
-      <button onClick={() => huddle.toggleMute()} disabled={!voice.live} style={{ ...pill, background: voice.muted ? 'var(--danger)' : pill.background, color: voice.muted ? '#fff' : 'inherit' }}>
-        <MicIcon off={voice.muted} size={16} />
-        {voice.muted ? tr('huddle.unmute') : tr('huddle.mute')}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, font: font(600, 13), whiteSpace: 'nowrap' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#2F9E62', flex: 'none' }} />
+          {tr('huddle.callCount', { count: voice.ids.length })}
+        </div>
+        <div className="ellipsis" style={{ marginTop: 1, font: font(400, 12), color: 'var(--muted)' }}>{callStatus(room, v.you, voice)}</div>
+      </div>
+      <button onClick={() => huddle.toggleMute()} disabled={!voice.live} title={voice.muted ? tr('huddle.unmute') : tr('huddle.mute')} style={round(voice.muted ? 'var(--ink)' : 'var(--fill2)', voice.muted ? 'var(--onInk)' : 'var(--ink)')}>
+        {svg(voice.muted ? MIC_OFF : MIC)}
       </button>
-      <button onClick={() => huddle.toggleDuck()} title={tr('huddle.duck')} aria-pressed={voice.duck} style={{ ...pill, background: voice.duck ? 'color-mix(in srgb,currentColor 22%,transparent)' : pill.background, opacity: voice.duck ? 1 : 0.7 }}>
-        <VolumeIcon level={voice.duck ? 0.3 : 1} size={16} />
-        {tr('huddle.duck')}
+      <button onClick={() => huddle.toggleDuck()} title={voice.duck ? tr('huddle.duckOn') : tr('huddle.duck')} aria-pressed={voice.duck} style={round(voice.duck ? 'var(--accentSoft)' : 'var(--fill2)', voice.duck ? 'var(--accentInk)' : 'var(--ink)')}>
+        {svg(DUCK)}
       </button>
-      <button onClick={() => huddle.leaveVoice()} style={{ ...pill, background: 'var(--danger)', color: '#fff' }}>{tr('huddle.leave')}</button>
+      <button onClick={() => huddle.leaveVoice()} title={tr('huddle.leaveVoice')} style={{ height: 40, padding: '0 14px 0 12px', border: 0, borderRadius: 999, background: '#C2421F', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, font: font(600, 13), cursor: 'pointer', flex: 'none' }}>
+        {svg(HANG_UP)}
+        {tr('huddle.leave')}
+      </button>
     </div>
   );
 }
@@ -305,7 +314,7 @@ export function Avatars({ v, room, bg, ink, size }: { v: HuddleView; room: RoomS
       {room.members.slice(0, 6).map(m => {
         const pct = m.id === v.you ? null : tasteMatch(room, v.you, m.id);
         return (
-          <span key={m.id} title={pct == null ? m.name : `${m.name} · ${tr('huddle.tasteMatch', { pct })}`} style={{ position: 'relative', width: size, height: size, marginInlineStart: -7, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', border: `2px solid ${bg}`, display: 'grid', placeItems: 'center', font: font(600, size * 0.4), animation: 'popIn .3s' }}>
+          <span key={m.id} title={pct == null ? m.name : `${m.name} · ${tr('huddle.tasteMatch', { pct })}`} style={{ position: 'relative', width: size, height: size, marginInlineStart: -7, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', border: `2px solid ${bg}`, display: 'grid', placeItems: 'center', font: font(600, size * 0.4), animation: talkAnim(v, m.id, 'popIn .3s') }}>
             {initial(m.name)}
             {pct != null && (
               <span style={{ position: 'absolute', left: '50%', bottom: -8, transform: 'translateX(-50%)', padding: '0 4px', height: 14, borderRadius: 7, background: ink, color: bg, font: font(600, 9, 'Geist Mono'), lineHeight: '14px', whiteSpace: 'nowrap' }}>{pct}%</span>
@@ -962,14 +971,20 @@ function Members({ v, room, onClose }: { v: HuddleView; room: RoomState; onClose
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {room.members.map(m => (
             <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
-              <span style={{ width: 40, height: 40, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 15), flex: 'none' }}>{initial(m.name)}</span>
+              <span style={{ width: 40, height: 40, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 15), flex: 'none', animation: talkAnim(v, m.id, 'none') }}>{initial(m.name)}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, font: font(600, 15) }}>
                   {m.id === v.you ? tr('huddle.you') : m.name}
                   {room.host === m.id && <span style={{ padding: '2px 6px', borderRadius: 5, background: 'var(--accentSoft)', color: 'var(--accentInk)', font: font(600, 10, 'Geist Mono'), letterSpacing: '.06em', textTransform: 'uppercase' }}>{tr('huddle.host')}</span>}
                 </div>
-                <div style={{ marginTop: 2, font: "400 12px/1.4 'Geist',sans-serif", color: 'var(--muted)' }}>{memberSub(room, v.you, m, v.voice)}</div>
+                <div style={{ marginTop: 2, font: "400 12px/1.4 'Geist',sans-serif", color: 'var(--muted)' }}>{memberSub(room, v.you, m)}</div>
               </div>
+              {voiceStatus(v.voice, m) && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, font: font(500, 12), color: v.voice?.speaking.includes(m.id) ? '#23804F' : 'var(--muted)', flex: 'none' }}>
+                  {svg(MIC, 15)}
+                  {voiceStatus(v.voice, m)}
+                </span>
+              )}
             </div>
           ))}
         </div>

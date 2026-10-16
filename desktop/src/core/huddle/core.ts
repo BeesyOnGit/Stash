@@ -38,6 +38,8 @@ export interface HuddleMember {
   reacts: number;
   /** `"key emoji"`: what they reacted to and how (for taste match). */
   likes: string[];
+  /** In the voice chat. */
+  voice: boolean;
 }
 
 export interface HuddleChat {
@@ -215,6 +217,8 @@ export interface HuddleHost {
     connect(url: string, token: string, on: { update(u: VoiceUpdate): void; ended(): void }): Promise<VoiceCall>;
     /** The music's level while ducking, 0..1 (1 = as set). */
     duck(level: number): void;
+    /** A short sound: someone joined (up) or left the call. */
+    chime(up: boolean): void;
   };
 }
 
@@ -307,6 +311,7 @@ export function createHuddle(host: HuddleHost) {
         for (let i = 0; i < 5; i++) setTimeout(ping, i * 250);
         // A reconnection is a new member: say again what's on this device.
         for (const k of paths.keys()) send({ t: 'ready', key: k });
+        if (view.voice?.live) send({ t: 'voice', on: true });
       } else if (msg.t === 'state') onState(msg as RoomState);
       else if (msg.t === 'pong') onPong(msg.c, msg.s);
       else if (msg.t === 'react') onReact(msg);
@@ -529,6 +534,8 @@ export function createHuddle(host: HuddleHost) {
     if (!host.voice || !code || !view.you || view.voice) return !!view.voice;
     const gen = ++voiceGen;
     const current = () => gen === voiceGen && !!view.voice;
+    /** Who was in the call at the last update, once we're in it. */
+    let known: string[] | null = null;
     set({ voice: { live: false, ids: [], speaking: [], mutedIds: [], muted: false, duck: duckOn } });
     try {
       const res = await fetch(`${base()}/huddles/${code}/voice?id=${encodeURIComponent(view.you)}`);
@@ -538,6 +545,11 @@ export function createHuddle(host: HuddleHost) {
       const c = await host.voice.connect(url, token, {
         update: u => {
           if (!current()) return;
+          if (known) {
+            if (u.ids.some(id => !known!.includes(id))) host.voice?.chime(true);
+            else if (known.some(id => !u.ids.includes(id))) host.voice?.chime(false);
+          }
+          if (call) known = u.ids;
           set({ voice: { ...view.voice!, ids: u.ids, speaking: u.speaking, mutedIds: u.muted } });
           duckForSpeakers();
         },
@@ -548,7 +560,10 @@ export function createHuddle(host: HuddleHost) {
         return false;
       }
       call = c;
+      known = view.voice!.ids;
+      host.voice.chime(true);
       set({ voice: { ...view.voice!, live: true } });
+      send({ t: 'voice', on: true });
       return true;
     } catch (e) {
       console.warn("Huddle: couldn't join voice", e);
@@ -559,6 +574,10 @@ export function createHuddle(host: HuddleHost) {
 
   function leaveVoice() {
     voiceGen++;
+    if (call) {
+      send({ t: 'voice', on: false });
+      host.voice?.chime(false);
+    }
     call?.leave();
     call = null;
     if (view.voice) set({ voice: null });

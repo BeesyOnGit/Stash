@@ -11,7 +11,7 @@ import { sourceFor } from '../sources';
 import type { OnlineResult, QueueItem, TrackSource } from '../types';
 import { createHuddle, type SharedTrack } from './core';
 import { HUDDLE_SERVER } from './server';
-import { connectVoice } from './voice';
+import { chime, connectVoice } from './voice';
 
 export * from './core';
 
@@ -41,6 +41,8 @@ function toItem(t: SharedTrack, path: string | null): QueueItem {
     streamUrl: path ? fileSrc(path) : undefined,
   };
 }
+
+let chimeCtx: AudioContext | undefined;
 
 export const huddle = createHuddle({
   serverUrl: () => HUDDLE_SERVER,
@@ -90,7 +92,11 @@ export const huddle = createHuddle({
   voice:
     typeof RTCPeerConnection === 'undefined'
       ? undefined
-      : { connect: connectVoice, duck: level => PlayerService.setDuck(level) },
+      : {
+          connect: connectVoice,
+          duck: level => PlayerService.setDuck(level),
+          chime: up => chime((chimeCtx ??= new AudioContext()), up),
+        },
 });
 
 export const useHuddle = () => useSyncExternalStore(huddle.subscribe, huddle.getView);
