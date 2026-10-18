@@ -1,5 +1,5 @@
 /** Huddle on the phone: the lobby (start or join) and the room (now playing or Guess the song, shared playlist, chat). */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
@@ -453,7 +453,7 @@ function NowPlaying({ v, room, ink, bg, inkA, glow, artBg }: { v: HuddleView; ro
   const pill = status ?? (room.last ? lastText(room.last) : tr('huddle.shared'));
   const [barW, setBarW] = useState(1);
   const lib = useLibraryStatus();
-  const shout = cur?.shout && v.shout?.key === cur.key && Date.now() - v.shout.at < 8000 ? cur : null;
+  const shout = cur?.shout && v.shout?.key === cur.key ? cur : null;
   return (
     <>
       <View style={[styles.row, { paddingTop: 16 }]}>
@@ -1120,6 +1120,74 @@ function RecapCard({ room, deep, glow, onClose }: { room: RoomState; deep: strin
 
 // ---------- chat ----------
 
+const nameOf = (id: string) => {
+  const { you, room } = huddle.getView();
+  return id === you ? tr('huddle.you') : room?.members.find(m => m.id === id)?.name ?? '?';
+};
+
+type RowProps = { m: HuddleChat; you: string | null; open: boolean; tick: number; setAct: (id: number | null) => void; onEdit: (m: HuddleChat) => void };
+
+const ChatRow = React.memo(function ChatRow({ m, you, open, setAct, onEdit }: RowProps) {
+  const t = useTheme();
+  if (m.kind !== 'msg') return <Text style={[font(400, 12, 1.4), styles.sys, { color: t.muted }]}>{chatText(m)}</Text>;
+  const mine = m.who === you;
+  const toggle = () => setAct(open ? null : m.id);
+  const extras = (
+    <>
+      {m.edited && <Text style={[font(400, 11), { color: t.muted, marginTop: 2 }]}>{tr('huddle.edited')}</Text>}
+      {Object.keys(m.rx).length > 0 && (
+        <View style={[styles.rxRow, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+          {Object.entries(m.rx).map(([e, who]) => {
+            const me = !!you && who.includes(you);
+            return (
+              <Pressable key={e} onPress={() => huddle.chatReact(m.id, e)} accessibilityLabel={who.map(nameOf).join(', ')} style={[styles.rxChip, { backgroundColor: me ? t.accentSoft : t.fill2, borderColor: me ? ACCENT : 'transparent' }]}>
+                <Text style={{ fontSize: 13 }}>{e}</Text>
+                <Text style={[mono(600, 11), { color: t.ink }]}>{who.length}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      {open && (
+        <View style={[styles.quick, { backgroundColor: t.card, borderColor: t.line, alignSelf: mine ? 'flex-end' : 'flex-start' }]}>
+          {QUICK_EMOS.map(e => (
+            <Pressable key={e} onPress={() => { huddle.chatReact(m.id, e); setAct(null); }} style={[styles.quickBtn, you && m.rx[e]?.includes(you) ? { backgroundColor: t.accentSoft } : null]}>
+              <Text style={{ fontSize: 18 }}>{e}</Text>
+            </Pressable>
+          ))}
+          {mine && (
+            <Pressable onPress={() => onEdit(m)} style={[styles.liveRow, { paddingHorizontal: 10, height: 34, gap: 5 }]}>
+              <PencilIcon color={t.ink} />
+              <Text style={[font(500, 12), { color: t.ink }]}>{tr('huddle.edit')}</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </>
+  );
+  return mine ? (
+    <View style={{ alignItems: 'flex-end', marginVertical: 6 }}>
+      <Pressable onPress={toggle} style={styles.mine}><Text style={[font(400, 15, 1.4), { color: '#fff' }]}>{m.text}</Text></Pressable>
+      {extras}
+    </View>
+  ) : (
+    <View style={styles.other}>
+      <View style={[styles.avatar, { width: 28, height: 28, marginLeft: 0, borderWidth: 0, backgroundColor: huddleColor(m.color) }]}>
+        <Text style={[font(600, 12), { color: '#fff' }]}>{initial(m.name)}</Text>
+      </View>
+      <View style={styles.flex}>
+        <Text style={[font(600, 13), { color: huddleColor(m.color) }]}>
+          {m.name} <Text style={[mono(400, 11), { color: t.muted }]}>{ago(m.at)}</Text>
+        </Text>
+        <Pressable onPress={toggle} style={[styles.otherBubble, { backgroundColor: t.fill2 }]}>
+          <Text style={[font(400, 15, 1.4), { color: t.ink }]}>{m.text}</Text>
+        </Pressable>
+        {extras}
+      </View>
+    </View>
+  );
+});
+
 function Chat({ v, room }: { v: HuddleView; room: RoomState }) {
   const t = useTheme();
   const [msg, setMsg] = useState('');
@@ -1134,74 +1202,24 @@ function Chat({ v, room }: { v: HuddleView; room: RoomState }) {
     setEditing(null);
     setPicker(false);
   };
-  const chat = [...room.chat].reverse();
-  const nameOf = (id: string) => (id === v.you ? tr('huddle.you') : room.members.find(m => m.id === id)?.name ?? '?');
-  const bubbleExtras = (m: HuddleChat, mine: boolean) => (
-    <>
-      {m.edited && <Text style={[font(400, 11), { color: t.muted, marginTop: 2 }]}>{tr('huddle.edited')}</Text>}
-      {Object.keys(m.rx).length > 0 && (
-        <View style={[styles.rxRow, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
-          {Object.entries(m.rx).map(([e, who]) => {
-            const me = !!v.you && who.includes(v.you);
-            return (
-              <Pressable key={e} onPress={() => huddle.chatReact(m.id, e)} accessibilityLabel={who.map(nameOf).join(', ')} style={[styles.rxChip, { backgroundColor: me ? t.accentSoft : t.fill2, borderColor: me ? ACCENT : 'transparent' }]}>
-                <Text style={{ fontSize: 13 }}>{e}</Text>
-                <Text style={[mono(600, 11), { color: t.ink }]}>{who.length}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-      {act === m.id && (
-        <View style={[styles.quick, { backgroundColor: t.card, borderColor: t.line, alignSelf: mine ? 'flex-end' : 'flex-start' }]}>
-          {QUICK_EMOS.map(e => (
-            <Pressable key={e} onPress={() => { huddle.chatReact(m.id, e); setAct(null); }} style={[styles.quickBtn, v.you && m.rx[e]?.includes(v.you) ? { backgroundColor: t.accentSoft } : null]}>
-              <Text style={{ fontSize: 18 }}>{e}</Text>
-            </Pressable>
-          ))}
-          {mine && (
-            <Pressable onPress={() => { setEditing(m); setMsg(m.text); setAct(null); }} style={[styles.liveRow, { paddingHorizontal: 10, height: 34, gap: 5 }]}>
-              <PencilIcon color={t.ink} />
-              <Text style={[font(500, 12), { color: t.ink }]}>{tr('huddle.edit')}</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-    </>
-  );
+  const chat = useMemo(() => [...room.chat].reverse(), [room.chat]);
+  const edit = useCallback((m: HuddleChat) => {
+    setEditing(m);
+    setMsg(m.text);
+    setAct(null);
+  }, []);
+  // The room redraws twice a second: rows only redraw when their message changes, or every 30 s for "2m ago".
+  const tick = Math.floor(Date.now() / 30_000);
   return (
     <View style={styles.flex}>
       <FlatList
         inverted
         data={chat}
+        extraData={act}
         keyExtractor={m => String(m.id)}
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8 }}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item: m }) =>
-          m.kind !== 'msg' ? (
-            <Text style={[font(400, 12, 1.4), styles.sys, { color: t.muted }]}>{chatText(m)}</Text>
-          ) : m.who === v.you ? (
-            <View style={{ alignItems: 'flex-end', marginVertical: 6 }}>
-              <Pressable onPress={() => setAct(act === m.id ? null : m.id)} style={styles.mine}><Text style={[font(400, 15, 1.4), { color: '#fff' }]}>{m.text}</Text></Pressable>
-              {bubbleExtras(m, true)}
-            </View>
-          ) : (
-            <View style={styles.other}>
-              <View style={[styles.avatar, { width: 28, height: 28, marginLeft: 0, borderWidth: 0, backgroundColor: huddleColor(m.color) }]}>
-                <Text style={[font(600, 12), { color: '#fff' }]}>{initial(m.name)}</Text>
-              </View>
-              <View style={styles.flex}>
-                <Text style={[font(600, 13), { color: huddleColor(m.color) }]}>
-                  {m.name} <Text style={[mono(400, 11), { color: t.muted }]}>{ago(m.at)}</Text>
-                </Text>
-                <Pressable onPress={() => setAct(act === m.id ? null : m.id)} style={[styles.otherBubble, { backgroundColor: t.fill2 }]}>
-                  <Text style={[font(400, 15, 1.4), { color: t.ink }]}>{m.text}</Text>
-                </Pressable>
-                {bubbleExtras(m, false)}
-              </View>
-            </View>
-          )
-        }
+        renderItem={({ item: m }) => <ChatRow m={m} you={v.you} open={act === m.id} tick={tick} setAct={setAct} onEdit={edit} />}
       />
       {picker && (
         <View style={[styles.picker, { backgroundColor: t.card, borderColor: t.line }]}>

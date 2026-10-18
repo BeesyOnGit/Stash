@@ -865,6 +865,11 @@ class PlayerServiceImpl {
     await this.load(index, false);
   }
 
+  /** The huddle's playlist changed: the queue follows, the song playing goes on. */
+  huddleQueue(items: QueueItem[], index: number) {
+    this.setState({ context: items, queue: items, index });
+  }
+
   play() {
     if (this.remote) this.remote.play();
     else this.localPlay();

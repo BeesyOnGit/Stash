@@ -7,6 +7,14 @@ when offering the update/.
 Add a `## x.y.z` section before tagging `vx.y.z`. The text can be edited
 later on GitHub (Releases → Edit) without rebuilding.
 
+## 1.3.8
+
+- **No more hiccups when adding songs:** adding, removing or reordering songs in a huddle no longer pauses or stutters the song that's playing for everyone.
+- **A smoother chat:** the huddle chat stays fast however many messages there are.
+- **Shoutouts stay:** a song's shoutout now stays up for as long as the song plays, instead of disappearing after a few seconds. Tap it to hide it.
+- **Tidier controls (computer):** the download button next to the huddle's play controls is now a small icon, so it no longer spills over the controls.
+- **Google emoji in the chat (computer):** emoji typed in messages, names and shoutouts use the same Google style as the reactions.
+
 ## 1.3.7
 
 - **Talk in a huddle:** tap **Join voice** at the top of a huddle to talk with the others while the music plays. The voice bar shows who's in the call, with a green ring around whoever is talking, and has **Mute** and **Leave**. The members list shows who's in voice, talking or muted, and the button shows **Voice · 2** when others are already talking. A short sound plays when someone joins or leaves the call.

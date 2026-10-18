@@ -88,6 +88,7 @@ export const huddle = createHuddle({
         index,
         tr('huddle.ctx'),
       ),
+    setQueue: (items, index) => PlayerService.huddleQueue(items.map(i => toItem(i.track, i.path)), index),
     play: () => PlayerService.localPlay(),
     pause: () => PlayerService.localPause(),
     seek: s => PlayerService.localSeek(s),

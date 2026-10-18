@@ -202,6 +202,8 @@ export interface HuddleHost {
   player: {
     /** Puts the huddle's songs in the queue and loads `index` without playing. */
     load(items: { track: SharedTrack; path: string | null }[], index: number): Promise<void>;
+    /** The playlist changed: updates the queue, the song playing goes on. */
+    setQueue(items: { track: SharedTrack; path: string | null }[], index: number): void;
     play(): void;
     pause(): void;
     seek(seconds: number): void;
@@ -417,6 +419,7 @@ export function createHuddle(host: HuddleHost) {
 
   function onState(room: RoomState) {
     const prev = view.room;
+    if (prev) room.chat = keepChat(prev.chat, room.chat);
     const cur = room.queue[room.index];
     if (cur?.key !== mineFor) {
       // A song changed (not on the first state: no shoutout for what was already on).
@@ -429,11 +432,21 @@ export function createHuddle(host: HuddleHost) {
     const cache: Record<string, CacheState> = {};
     for (const [k, v] of Object.entries(view.cache)) if (keys.has(k)) cache[k] = v;
     set({ room, cache });
-    // The playlist changed under the player: reload it so Up next matches.
+    // The playlist changed under the player: Up next follows, without reloading the song playing.
     if (prev && cur && loadedKey === cur.key && prev.queue.map(t => t.key).join() !== room.queue.map(t => t.key).join())
-      loadedKey = null;
+      host.player.setQueue(items(room), room.index);
     pump();
     sync();
+  }
+
+  /** Every state carries the whole chat: unchanged messages keep their old objects, so the chat only redraws what changed. */
+  function keepChat(old: HuddleChat[], chat: HuddleChat[]) {
+    const byId = new Map(old.map(m => [m.id, m]));
+    const kept = chat.map(m => {
+      const o = byId.get(m.id);
+      return o && o.text === m.text && o.edited === m.edited && JSON.stringify(o.rx) === JSON.stringify(m.rx) ? o : m;
+    });
+    return kept.length === old.length && kept.every((m, i) => m === old[i]) ? old : kept;
   }
 
   /** Caches the songs one at a time: the current one first, then what comes next. */
@@ -465,6 +478,8 @@ export function createHuddle(host: HuddleHost) {
     pump();
   }
 
+  const items = (room: RoomState) => room.queue.map(t => ({ track: t, path: paths.get(t.key) ?? null }));
+
   /** Keeps the local player on the room's timeline. Runs on every state and every second. */
   async function sync() {
     const room = view.room;
@@ -480,10 +495,7 @@ export function createHuddle(host: HuddleHost) {
       if (!path) return;
       loading = true;
       try {
-        await host.player.load(
-          room.queue.map(t => ({ track: t, path: paths.get(t.key) ?? null })),
-          room.index,
-        );
+        await host.player.load(items(room), room.index);
         loadedKey = cur.key;
         settleUntil = 0;
       } finally {

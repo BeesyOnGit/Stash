@@ -1,5 +1,5 @@
 /** Huddle: the lobby (start or join) and the room (stage or Guess the song, shared playlist, chat), over the window below the title bar. */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type ReactNode } from 'react';
 import {
   DEFAULT_EMOS,
   EMO_CATS,
@@ -29,9 +29,10 @@ import { CheckIcon, ChevronLeftIcon, CloseIcon, DotsIcon, DownloadIcon, GripIcon
 import { ACCENT, Cover } from './kit';
 import { VolumeControl } from './player/PlayerBar';
 
-const font = (w: number, s: number, fam = 'Geist') => `${w} ${s}px '${fam}',${fam === 'Geist' ? 'sans-serif' : 'monospace'}`;
 /** Google's emoji, like the phone. */
 const EMOJI = "'Noto Color Emoji','Segoe UI Emoji','Apple Color Emoji',sans-serif";
+// Geist has no emoji: the ones typed in names, chat and shoutouts fall through to Google's.
+const font = (w: number, s: number, fam = 'Geist') => `${w} ${s}px '${fam}',${fam === 'Geist' ? EMOJI : 'monospace'}`;
 const emo = (size: number): CSSProperties => ({ font: `${size}px/1 ${EMOJI}` });
 const close = () => setApp({ huddle: false });
 const initial = (name: string) => name[0]?.toUpperCase() ?? '?';
@@ -74,8 +75,8 @@ function Lobby({ v }: { v: HuddleView }) {
           {tr('huddle.back')}
         </button>
         <div className="eyebrow" style={{ marginTop: 44 }}>{tr('huddle.nav')}</div>
-        <h1 style={{ margin: '6px 0 0', font: "700 48px/1.02 'Geist',sans-serif", letterSpacing: '-.04em' }}>{tr('huddle.title')}</h1>
-        <p style={{ margin: '14px 0 0', maxWidth: 560, font: "400 16px/1.5 'Geist',sans-serif", color: 'var(--ink2)' }}>{tr('huddle.intro')}</p>
+        <h1 style={{ margin: '6px 0 0', font: `700 48px/1.02 'Geist',${EMOJI}`, letterSpacing: '-.04em' }}>{tr('huddle.title')}</h1>
+        <p style={{ margin: '14px 0 0', maxWidth: 560, font: `400 16px/1.5 'Geist',${EMOJI}`, color: 'var(--ink2)' }}>{tr('huddle.intro')}</p>
 
         <div style={{ marginTop: 24, display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ ...label, width: 320 }}>
@@ -104,7 +105,7 @@ function Lobby({ v }: { v: HuddleView }) {
             <div style={iconBox}><PlusIcon size={22} /></div>
             <div>
               <div style={{ font: font(600, 20), letterSpacing: '-.02em' }}>{tr('huddle.startTitle')}</div>
-              <div style={{ marginTop: 4, font: "400 14px/1.45 'Geist',sans-serif", color: 'var(--muted)' }}>{tr('huddle.startSub')}</div>
+              <div style={{ marginTop: 4, font: `400 14px/1.45 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{tr('huddle.startSub')}</div>
             </div>
             <input value={roomName} onChange={e => setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} placeholder={tr('huddle.namePh')} maxLength={40} style={input} />
             <button onClick={create} style={bigBtn(!busy)}>{busy ? tr('huddle.connecting') : tr('huddle.start')}</button>
@@ -115,7 +116,7 @@ function Lobby({ v }: { v: HuddleView }) {
             </div>
             <div>
               <div style={{ font: font(600, 20), letterSpacing: '-.02em' }}>{tr('huddle.joinTitle')}</div>
-              <div style={{ marginTop: 4, font: "400 14px/1.45 'Geist',sans-serif", color: 'var(--muted)' }}>{tr('huddle.joinSub')}</div>
+              <div style={{ marginTop: 4, font: `400 14px/1.45 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{tr('huddle.joinSub')}</div>
             </div>
             <input
               value={code}
@@ -337,7 +338,7 @@ function Stage({ v, room, cur, ink, bg, artBg, glow }: { v: HuddleView; room: Ro
   const pillColor = room.last && !statusText(v) ? huddleColor(room.last.color) : 'currentColor';
   const ctl: CSSProperties = { width: 44, height: 44, border: 0, background: 'transparent', color: 'inherit', display: 'grid', placeItems: 'center', cursor: 'pointer' };
   const lib = useLibraryStatus();
-  const shout = cur?.shout && v.shout?.key === cur.key && Date.now() - v.shout.at < 8000 ? cur : null;
+  const shout = cur?.shout && v.shout?.key === cur.key ? cur : null;
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
       {shout && (
@@ -346,7 +347,7 @@ function Stage({ v, room, cur, ink, bg, artBg, glow }: { v: HuddleView; room: Ro
             <span style={{ width: 30, height: 30, borderRadius: '50%', background: huddleColor(shout.byColor), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 12), flex: 'none' }}>{initial(shout.byName)}</span>
             <div style={{ minWidth: 0 }}>
               <div style={{ font: font(600, 10, 'Geist Mono'), letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>{shout.by === v.you ? tr('huddle.yourShout') : tr('huddle.shoutBy', { name: shout.byName })}</div>
-              <div style={{ marginTop: 1, font: "500 14px/1.35 'Geist',sans-serif" }}>“{shout.shout}”</div>
+              <div style={{ marginTop: 1, font: `500 14px/1.35 'Geist',${EMOJI}` }}>“{shout.shout}”</div>
             </div>
           </div>
         </div>
@@ -356,7 +357,7 @@ function Stage({ v, room, cur, ink, bg, artBg, glow }: { v: HuddleView; room: Ro
         <Cover src={cur?.artwork} size={240} radius={16} bg={artBg} style={{ position: 'relative', boxShadow: '0 24px 60px rgba(0,0,0,.35)' }} />
       </div>
       <div style={{ marginTop: 22, maxWidth: '100%', textAlign: 'center' }}>
-        <div className="ellipsis" style={{ font: "700 28px/1.15 'Geist',sans-serif", letterSpacing: '-.03em' }}>{cur?.title ?? tr('huddle.empty')}</div>
+        <div className="ellipsis" style={{ font: `700 28px/1.15 'Geist',${EMOJI}`, letterSpacing: '-.03em' }}>{cur?.title ?? tr('huddle.empty')}</div>
         {cur && <div style={{ marginTop: 4, font: font(400, 16), opacity: 0.8 }}>{cur.artist}</div>}
       </div>
       {cur && (
@@ -446,7 +447,7 @@ function GameStage({ v, room, ink, bg }: { v: HuddleView; room: RoomState; ink: 
       )}
       {!hide && cur && (
         <div style={{ marginTop: 12, maxWidth: '100%', textAlign: 'center', animation: 'hdUp .3s' }}>
-          <div className="ellipsis" style={{ font: "700 22px/1.2 'Geist',sans-serif", letterSpacing: '-.02em' }}>{cur.title}</div>
+          <div className="ellipsis" style={{ font: `700 22px/1.2 'Geist',${EMOJI}`, letterSpacing: '-.02em' }}>{cur.title}</div>
           <div style={{ marginTop: 2, font: font(400, 14), opacity: 0.8 }}>{cur.artist}</div>
         </div>
       )}
@@ -462,7 +463,7 @@ function GameStage({ v, room, ink, bg }: { v: HuddleView; room: RoomState; ink: 
           const votes = (g.picks ?? []).filter(p => p.opt === i).map(p => room.members.find(m => m.id === p.who)).filter(m => !!m);
           return (
             <button key={i} onClick={() => guess(i)} style={{ position: 'relative', minHeight: 58, padding: '9px 12px', border: 0, borderRadius: 14, background: back, color: fore, opacity: op, textAlign: 'start', cursor: ask && !mine && picked == null ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0, transition: 'background .2s,opacity .2s' }}>
-              <span className="ellipsis" style={{ font: "600 14px/1.25 'Geist',sans-serif", maxWidth: '100%' }}>{o.title}</span>
+              <span className="ellipsis" style={{ font: `600 14px/1.25 'Geist',${EMOJI}`, maxWidth: '100%' }}>{o.title}</span>
               <span className="ellipsis" style={{ font: font(400, 12), opacity: 0.75, maxWidth: '100%' }}>{o.artist}</span>
               {votes.length > 0 && (
                 <span style={{ position: 'absolute', top: -7, insetInlineEnd: 8, display: 'flex', gap: 2 }}>
@@ -625,16 +626,14 @@ function DlButton({ t, status, big }: { t: SharedTrack; status: string | undefin
   const pct = Math.round((p ?? 0) * 100);
   if (status === 'ready')
     return (
-      <span title={tr('huddle.downloaded')} style={{ height: big ? 34 : 26, minWidth: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, font: font(500, 13), opacity: 0.8, flex: 'none' }}>
-        <CheckIcon size={14} />
-        {big && tr('huddle.downloaded')}
+      <span title={tr('huddle.downloaded')} style={{ width: big ? 34 : 26, height: big ? 34 : 26, display: 'grid', placeItems: 'center', opacity: 0.8, flex: 'none' }}>
+        <CheckIcon size={big ? 16 : 14} />
       </span>
     );
   if (status === 'downloading' || p != null)
     return (
-      <span title={tr('huddle.downloading', { pct })} style={{ height: big ? 34 : 26, minWidth: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, font: font(500, 13, 'Geist Mono'), color: big ? 'inherit' : ACCENT, flex: 'none' }}>
+      <span title={tr('huddle.downloading', { pct })} style={{ width: big ? 34 : 26, height: big ? 34 : 26, display: 'grid', placeItems: 'center', color: big ? 'inherit' : ACCENT, flex: 'none' }}>
         <span style={{ width: big ? 18 : 16, height: big ? 18 : 16, borderRadius: '50%', background: `conic-gradient(currentColor ${pct}%,color-mix(in srgb,currentColor 20%,transparent) 0)`, WebkitMask: 'radial-gradient(circle,transparent 5px,#000 6px)', mask: 'radial-gradient(circle,transparent 5px,#000 6px)' }} />
-        {big && `${pct}%`}
       </span>
     );
   return (
@@ -647,11 +646,10 @@ function DlButton({ t, status, big }: { t: SharedTrack; status: string | undefin
       title={tr('huddle.download')}
       className={big ? undefined : 'h-fill2'}
       style={big
-        ? { height: 34, padding: '0 12px 0 9px', border: 0, borderRadius: 999, background: 'color-mix(in srgb,currentColor 10%,transparent)', color: 'inherit', display: 'flex', alignItems: 'center', gap: 6, font: font(500, 13), cursor: 'pointer', whiteSpace: 'nowrap' }
+        ? { width: 34, height: 34, border: 0, borderRadius: '50%', background: 'color-mix(in srgb,currentColor 10%,transparent)', color: 'inherit', display: 'grid', placeItems: 'center', cursor: 'pointer', flex: 'none', padding: 0 }
         : { width: 26, height: 26, border: 0, borderRadius: '50%', background: 'transparent', color: 'var(--muted)', display: 'grid', placeItems: 'center', cursor: 'pointer', flex: 'none', padding: 0 }}
     >
       <DownloadIcon size={big ? 16 : 15} />
-      {big && tr('huddle.download')}
     </button>
   );
 }
@@ -746,7 +744,7 @@ function Queue({ v, room }: { v: HuddleView; room: RoomState }) {
                 <span style={{ width: 14, height: 14, borderRadius: '50%', background: huddleColor(t.byColor), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 8), flex: 'none' }}>{initial(t.byName)}</span>
                 <span className="ellipsis">{t.byName} · {sourceText(t)}</span>
               </div>
-              {t.shout && <div className="ellipsis" style={{ marginTop: 1, font: "italic 400 12px 'Geist',sans-serif", color: 'var(--ink2)' }}>“{t.shout}”</div>}
+              {t.shout && <div className="ellipsis" style={{ marginTop: 1, font: `italic 400 12px 'Geist',${EMOJI}`, color: 'var(--ink2)' }}>“{t.shout}”</div>}
             </div>
             <span style={{ font: font(500, 12, 'Geist Mono'), color: 'var(--muted)', flex: 'none' }}>{formatTime(t.duration)}</span>
             <DlButton t={t} status={lib.get(t.key)} />
@@ -928,7 +926,7 @@ function GamePicker({ room, onClose }: { room: RoomState; onClose: () => void })
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ font: font(600, 18), letterSpacing: '-.02em' }}>{tr('huddle.pickTitle')}</div>
-            <div style={{ marginTop: 3, font: "400 13px/1.45 'Geist',sans-serif", color: 'var(--muted)' }}>{tr('huddle.pickSub')}</div>
+            <div style={{ marginTop: 3, font: `400 13px/1.45 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{tr('huddle.pickSub')}</div>
           </div>
           {closeBtn(onClose)}
         </div>
@@ -977,7 +975,7 @@ function Members({ v, room, onClose }: { v: HuddleView; room: RoomState; onClose
                   {m.id === v.you ? tr('huddle.you') : m.name}
                   {room.host === m.id && <span style={{ padding: '2px 6px', borderRadius: 5, background: 'var(--accentSoft)', color: 'var(--accentInk)', font: font(600, 10, 'Geist Mono'), letterSpacing: '.06em', textTransform: 'uppercase' }}>{tr('huddle.host')}</span>}
                 </div>
-                <div style={{ marginTop: 2, font: "400 12px/1.4 'Geist',sans-serif", color: 'var(--muted)' }}>{memberSub(room, v.you, m)}</div>
+                <div style={{ marginTop: 2, font: `400 12px/1.4 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{memberSub(room, v.you, m)}</div>
               </div>
               {voiceStatus(v.voice, m) && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, font: font(500, 12), color: v.voice?.speaking.includes(m.id) ? '#23804F' : 'var(--muted)', flex: 'none' }}>
@@ -988,9 +986,9 @@ function Members({ v, room, onClose }: { v: HuddleView; room: RoomState; onClose
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 6, font: "400 12px/1.45 'Geist',sans-serif", color: 'var(--muted)' }}>{tr('huddle.tasteHint')}</div>
+        <div style={{ marginTop: 6, font: `400 12px/1.45 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{tr('huddle.tasteHint')}</div>
         <div style={{ marginTop: 14, padding: '12px 12px 12px 14px', borderRadius: 14, background: 'var(--fill)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ font: "400 13px/1.4 'Geist',sans-serif", color: 'var(--ink2)' }}>
+          <div style={{ font: `400 13px/1.4 'Geist',${EMOJI}`, color: 'var(--ink2)' }}>
             {tr('huddle.invite')} <span style={{ font: font(600, 13, 'Geist Mono'), letterSpacing: '.12em', color: 'var(--ink)' }}>{room.code}</span>
           </div>
           <button
@@ -1033,14 +1031,14 @@ function RecapCard({ room, deep, glow, onClose }: { room: RoomState; deep: strin
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ font: font(600, 11, 'Geist Mono'), letterSpacing: '.08em', textTransform: 'uppercase', opacity: 0.75 }}>{tr('huddle.recapTitle')}</div>
-              <div style={{ marginTop: 4, font: "700 22px/1.1 'Geist',sans-serif", letterSpacing: '-.03em' }}>{room.name}</div>
+              <div style={{ marginTop: 4, font: `700 22px/1.1 'Geist',${EMOJI}`, letterSpacing: '-.03em' }}>{room.name}</div>
               <div style={{ marginTop: 4, font: font(400, 13), opacity: 0.75 }}>{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
             </div>
           </div>
           <div style={{ position: 'relative', marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
             {[[r.mins, tr('huddle.together')], [r.songs, tr('huddle.songsPlayed')], [r.msgs, tr('huddle.messages')]].map(([a, b]) => (
               <div key={b} style={tile}>
-                <div style={{ font: "700 20px/1.1 'Geist',sans-serif", whiteSpace: 'nowrap' }}>{a}</div>
+                <div style={{ font: `700 20px/1.1 'Geist',${EMOJI}`, whiteSpace: 'nowrap' }}>{a}</div>
                 <div style={{ marginTop: 3, font: font(500, 11), opacity: 0.72 }}>{b}</div>
               </div>
             ))}
@@ -1079,6 +1077,73 @@ function RecapCard({ room, deep, glow, onClose }: { room: RoomState; deep: strin
 
 // ---------- chat ----------
 
+const nameOf = (id: string) => {
+  const { you, room } = huddle.getView();
+  return id === you ? tr('huddle.you') : room?.members.find(m => m.id === id)?.name ?? '?';
+};
+
+type RowProps = { m: HuddleChat; you: string | null; open: boolean; tick: number; setAct: (id: number | null) => void; onEdit: (m: HuddleChat) => void };
+
+const ChatRow = memo(function ChatRow({ m, you, open, setAct, onEdit }: RowProps) {
+  if (m.kind !== 'msg') return <div style={{ alignSelf: 'center', maxWidth: '90%', textAlign: 'center', font: `400 12px/1.4 'Geist',${EMOJI}`, color: 'var(--muted)' }}>{chatText(m)}</div>;
+  const mine = m.who === you;
+  const toggle = () => setAct(open ? null : m.id);
+  const extras = (
+    <>
+      {m.edited && <span style={{ marginTop: 2, font: font(400, 11), color: 'var(--muted)' }}>{tr('huddle.edited')}</span>}
+      {Object.keys(m.rx).length > 0 && (
+        <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+          {Object.entries(m.rx).map(([e, who]) => {
+            const me = !!you && who.includes(you);
+            return (
+              <button key={e} onClick={() => huddle.chatReact(m.id, e)} title={who.map(nameOf).join(', ')} style={{ height: 24, padding: '0 7px', borderRadius: 999, border: `1px solid ${me ? ACCENT : 'transparent'}`, background: me ? 'var(--accentSoft)' : 'var(--fill2)', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 4, font: font(600, 11, 'Geist Mono'), cursor: 'pointer' }}>
+                <span style={emo(13)}>{e}</span>
+                {who.length}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {open && (
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 1, padding: 3, borderRadius: 999, background: 'var(--card)', boxShadow: '0 6px 18px rgba(0,0,0,.14),0 0 0 1px var(--line)', animation: 'hdUp .15s', width: 'max-content', maxWidth: '100%' }}>
+          {QUICK_EMOS.map(e => (
+            <button key={e} className="h-fill2" onClick={() => { huddle.chatReact(m.id, e); setAct(null); }} style={{ width: 30, height: 30, border: 0, borderRadius: '50%', background: you && m.rx[e]?.includes(you) ? 'var(--accentSoft)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer', padding: 0, flex: 'none' }}>
+              <span style={emo(17)}>{e}</span>
+            </button>
+          ))}
+          {mine && (
+            <>
+              <span style={{ width: 1, height: 18, background: 'var(--line2)', margin: '0 3px', flex: 'none' }} />
+              <button className="h-fill2" onClick={() => onEdit(m)} style={{ height: 30, padding: '0 10px 0 8px', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--ink)', font: font(500, 12), cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, flex: 'none' }}>
+                <PencilIcon size={13} />
+                {tr('huddle.edit')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
+  return mine ? (
+    <div style={{ alignSelf: 'flex-end', maxWidth: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', animation: 'hdUp .25s' }}>
+      <div onClick={toggle} title={tr('huddle.edit')} style={{ maxWidth: 240, padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: ACCENT, color: '#fff', font: `400 14px/1.4 'Geist',${EMOJI}`, overflowWrap: 'anywhere', userSelect: 'text', cursor: 'pointer' }}>{m.text}</div>
+      {extras}
+    </div>
+  ) : (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', animation: 'hdUp .25s' }}>
+      <span style={{ width: 26, height: 26, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 11), flex: 'none' }}>{initial(m.name)}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+          <span style={{ font: font(600, 13), color: huddleColor(m.color) }}>{m.name}</span>
+          <span style={{ font: font(400, 11, 'Geist Mono'), color: 'var(--muted)' }}>{ago(m.at)}</span>
+        </div>
+        <div onClick={toggle} title={tr('huddle.react')} style={{ marginTop: 3, width: 'max-content', maxWidth: '100%', padding: '8px 12px', borderRadius: '4px 14px 14px 14px', background: 'color-mix(in srgb,var(--ink) 7%,var(--card))', font: `400 14px/1.4 'Geist',${EMOJI}`, overflowWrap: 'anywhere', userSelect: 'text', cursor: 'pointer', boxSizing: 'border-box' }}>{m.text}</div>
+        {extras}
+      </div>
+    </div>
+  );
+});
+
 function Chat({ v, room, bg }: { v: HuddleView; room: RoomState; bg: string }) {
   const [msg, setMsg] = useState('');
   const [act, setAct] = useState<number | null>(null);
@@ -1097,43 +1162,13 @@ function Chat({ v, room, bg }: { v: HuddleView; room: RoomState; bg: string }) {
     setEditing(null);
     setMsg('');
   };
-  const nameOf = (id: string) => (id === v.you ? tr('huddle.you') : room.members.find(m => m.id === id)?.name ?? '?');
-  const extras = (m: HuddleChat, mine: boolean) => (
-    <>
-      {m.edited && <span style={{ marginTop: 2, font: font(400, 11), color: 'var(--muted)' }}>{tr('huddle.edited')}</span>}
-      {Object.keys(m.rx).length > 0 && (
-        <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
-          {Object.entries(m.rx).map(([e, who]) => {
-            const me = !!v.you && who.includes(v.you);
-            return (
-              <button key={e} onClick={() => huddle.chatReact(m.id, e)} title={who.map(nameOf).join(', ')} style={{ height: 24, padding: '0 7px', borderRadius: 999, border: `1px solid ${me ? ACCENT : 'transparent'}`, background: me ? 'var(--accentSoft)' : 'var(--fill2)', color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 4, font: font(600, 11, 'Geist Mono'), cursor: 'pointer' }}>
-                <span style={emo(13)}>{e}</span>
-                {who.length}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {act === m.id && (
-        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 1, padding: 3, borderRadius: 999, background: 'var(--card)', boxShadow: '0 6px 18px rgba(0,0,0,.14),0 0 0 1px var(--line)', animation: 'hdUp .15s', width: 'max-content', maxWidth: '100%' }}>
-          {QUICK_EMOS.map(e => (
-            <button key={e} className="h-fill2" onClick={() => { huddle.chatReact(m.id, e); setAct(null); }} style={{ width: 30, height: 30, border: 0, borderRadius: '50%', background: v.you && m.rx[e]?.includes(v.you) ? 'var(--accentSoft)' : 'transparent', display: 'grid', placeItems: 'center', cursor: 'pointer', padding: 0, flex: 'none' }}>
-              <span style={emo(17)}>{e}</span>
-            </button>
-          ))}
-          {mine && (
-            <>
-              <span style={{ width: 1, height: 18, background: 'var(--line2)', margin: '0 3px', flex: 'none' }} />
-              <button className="h-fill2" onClick={() => { setEditing(m); setMsg(m.text); setAct(null); }} style={{ height: 30, padding: '0 10px 0 8px', border: 0, borderRadius: 999, background: 'transparent', color: 'var(--ink)', font: font(500, 12), cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, flex: 'none' }}>
-                <PencilIcon size={13} />
-                {tr('huddle.edit')}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-    </>
-  );
+  const edit = useCallback((m: HuddleChat) => {
+    setEditing(m);
+    setMsg(m.text);
+    setAct(null);
+  }, []);
+  // Rows only redraw when their message changes, or every 30 s for "2m ago".
+  const tick = Math.floor(Date.now() / 30_000);
   return (
     <div style={{ width: 320, flex: 'none', display: 'flex', flexDirection: 'column', minHeight: 0, borderInlineStart: '1px solid var(--line)', background: bg, transition: 'background .7s' }}>
       <div style={{ padding: '18px 18px 12px', borderBottom: '1px solid var(--line)' }}>
@@ -1142,28 +1177,7 @@ function Chat({ v, room, bg }: { v: HuddleView; room: RoomState; bg: string }) {
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column-reverse', padding: '12px 14px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {room.chat.map(m =>
-            m.kind !== 'msg' ? (
-              <div key={m.id} style={{ alignSelf: 'center', maxWidth: '90%', textAlign: 'center', font: "400 12px/1.4 'Geist',sans-serif", color: 'var(--muted)' }}>{chatText(m)}</div>
-            ) : m.who === v.you ? (
-              <div key={m.id} style={{ alignSelf: 'flex-end', maxWidth: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', animation: 'hdUp .25s' }}>
-                <div onClick={() => setAct(act === m.id ? null : m.id)} title={tr('huddle.edit')} style={{ maxWidth: 240, padding: '8px 12px', borderRadius: '14px 14px 4px 14px', background: ACCENT, color: '#fff', font: "400 14px/1.4 'Geist',sans-serif", overflowWrap: 'anywhere', userSelect: 'text', cursor: 'pointer' }}>{m.text}</div>
-                {extras(m, true)}
-              </div>
-            ) : (
-              <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', animation: 'hdUp .25s' }}>
-                <span style={{ width: 26, height: 26, borderRadius: '50%', background: huddleColor(m.color), color: '#fff', display: 'grid', placeItems: 'center', font: font(600, 11), flex: 'none' }}>{initial(m.name)}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                    <span style={{ font: font(600, 13), color: huddleColor(m.color) }}>{m.name}</span>
-                    <span style={{ font: font(400, 11, 'Geist Mono'), color: 'var(--muted)' }}>{ago(m.at)}</span>
-                  </div>
-                  <div onClick={() => setAct(act === m.id ? null : m.id)} title={tr('huddle.react')} style={{ marginTop: 3, width: 'max-content', maxWidth: '100%', padding: '8px 12px', borderRadius: '4px 14px 14px 14px', background: 'color-mix(in srgb,var(--ink) 7%,var(--card))', font: "400 14px/1.4 'Geist',sans-serif", overflowWrap: 'anywhere', userSelect: 'text', cursor: 'pointer', boxSizing: 'border-box' }}>{m.text}</div>
-                  {extras(m, false)}
-                </div>
-              </div>
-            ),
-          )}
+          {room.chat.map(m => <ChatRow key={m.id} m={m} you={v.you} open={act === m.id} tick={tick} setAct={setAct} onEdit={edit} />)}
         </div>
       </div>
       <div style={{ position: 'relative', flex: 'none', borderTop: '1px solid var(--line)' }}>
